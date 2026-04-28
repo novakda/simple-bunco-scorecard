@@ -1,0 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@700&family=Inter:wght@400;600&display=swap');
+
+:root {
+  --bg:         #0f0f0f;
+  --surface:    #1c1c1c;
+  --surface-hi: #2a2a2a;
+  --accent:     #f59e0b;
+  --accent-dim: #92400e;
+  --text-hi:    #f5f5f5;
+  --text-mid:   #a3a3a3;
+  --text-lo:    #525252;
+  --win:        #22c55e;
+  --loss:       #ef4444;
+  --tie:        #6b7280;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #app {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-hi);
+  font-family: 'Inter', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}

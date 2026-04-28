@@ -1,0 +1,353 @@
+<template>
+  <!-- BUNCO! Celebration -->
+  <div v-if="isBuncoPhase" class="bunco-celebration" @click="commitRound('W')">
+    <div class="bunco-text">BUNCO!</div>
+    <div class="bunco-sub">Tap to continue</div>
+  </div>
+
+  <!-- W/L/T Picker -->
+  <div v-else-if="isRoundEndPhase" class="overlay-screen">
+    <div class="overlay-title">Round {{ currentRound }} complete</div>
+    <div class="overlay-subtitle">How did you finish?</div>
+    <div class="wlt-row">
+      <button class="wlt-btn win" @click="commitRound('W')">WIN</button>
+      <button class="wlt-btn loss" @click="commitRound('L')">LOSS</button>
+      <button class="wlt-btn tie" @click="commitRound('T')">TIE</button>
+    </div>
+    <button class="ghost-btn" @click="undoLast">← Undo</button>
+  </div>
+
+  <!-- Set End -->
+  <div v-else-if="phase === 'set-end'" class="overlay-screen">
+    <div class="overlay-title">Set {{ currentSet }} complete</div>
+    <div class="set-summary">
+      <div class="summary-row">
+        <span>Rounds</span>
+        <span>{{ setWins }}W · {{ setLosses }}L · {{ setTies }}T</span>
+      </div>
+      <div class="summary-row">
+        <span>Points this set</span>
+        <span>{{ setPoints }}</span>
+      </div>
+      <div class="summary-row">
+        <span>Overall</span>
+        <span>{{ totalWins }}W · {{ totalLosses }}L · {{ totalTies }}T</span>
+      </div>
+    </div>
+    <button class="primary-btn" @click="nextSet">
+      {{ currentSet === 6 ? 'See Final Results' : 'Next Set →' }}
+    </button>
+  </div>
+
+  <!-- Game Over -->
+  <div v-else-if="phase === 'game-over'" class="overlay-screen game-over">
+    <div class="overlay-title">Game Over</div>
+    <div class="per-set-table">
+      <div class="table-header">
+        <span>Set</span><span>W</span><span>L</span><span>T</span><span>Pts</span>
+      </div>
+      <div v-for="s in 6" :key="s" class="table-row">
+        <span>{{ s }}</span>
+        <span>{{ setWinsFor(s) }}</span>
+        <span>{{ setLossesFor(s) }}</span>
+        <span>{{ setTiesFor(s) }}</span>
+        <span>{{ setPointsFor(s) }}</span>
+      </div>
+      <div class="table-row totals-row">
+        <span>Total</span>
+        <span>{{ totalWins }}</span>
+        <span>{{ totalLosses }}</span>
+        <span>{{ totalTies }}</span>
+        <span>{{ totalPoints }}</span>
+      </div>
+    </div>
+    <button class="primary-btn" @click="newGame">New Game</button>
+  </div>
+
+  <!-- Playing -->
+  <div v-else class="app-layout">
+    <!-- First-open hint -->
+    <div v-if="showHint" class="hint-bar" @click="dismissHint">
+      Tap 0–3 to record your score. Tap BUNCO! for a Bunco. ✕
+    </div>
+
+    <GameContext
+      :currentSet="currentSet"
+      :currentRound="currentRound"
+      :targetNumber="targetNumber"
+      :roundPoints="roundPoints"
+      :pointsToWin="pointsToWin"
+    />
+    <ScoreEntry
+      :phase="phase"
+      :recordScore="recordScore"
+      :undoLast="undoLast"
+      :endRound="endRound"
+    />
+    <RoundHistory
+      :setRollHistory="setRollHistory"
+      :setResults="setResults"
+      :currentRound="currentRound"
+    />
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import GameContext from './components/GameContext.vue'
+import ScoreEntry from './components/ScoreEntry.vue'
+import RoundHistory from './components/RoundHistory.vue'
+import { useGameState } from './composables/useGameState.js'
+
+const {
+  currentSet, currentRound, targetNumber, roundPoints, pointsToWin,
+  setRollHistory, setResults, phase, lastRoll,
+  recordScore, endRound, commitRound, nextSet, undoLast, newGame,
+  _state,
+} = useGameState()
+
+const isBuncoPhase = computed(
+  () => phase.value === 'round-end' && lastRoll.value?.type === 'bunco'
+)
+const isRoundEndPhase = computed(
+  () => phase.value === 'round-end' && lastRoll.value?.type !== 'bunco'
+)
+
+// BUNCO! auto-advance
+let buncoTimer = null
+import { watch } from 'vue'
+watch(isBuncoPhase, (val) => {
+  if (val) {
+    if (navigator.vibrate) navigator.vibrate(200)
+    buncoTimer = setTimeout(() => commitRound('W'), 2000)
+  } else {
+    clearTimeout(buncoTimer)
+  }
+})
+
+// Set/game summaries
+const allResults = computed(() => _state.value.results)
+const allRolls = computed(() => _state.value.rolls)
+
+const setWins = computed(() => setResults.value.filter(r => r.result === 'W').length)
+const setLosses = computed(() => setResults.value.filter(r => r.result === 'L').length)
+const setTies = computed(() => setResults.value.filter(r => r.result === 'T').length)
+const setPoints = computed(() => setRollHistory.value.reduce((s, r) => s + r.points, 0))
+
+const totalWins = computed(() => allResults.value.filter(r => r.result === 'W').length)
+const totalLosses = computed(() => allResults.value.filter(r => r.result === 'L').length)
+const totalTies = computed(() => allResults.value.filter(r => r.result === 'T').length)
+const totalPoints = computed(() => allRolls.value.reduce((s, r) => s + r.points, 0))
+
+function setWinsFor(s) { return allResults.value.filter(r => r.set === s && r.result === 'W').length }
+function setLossesFor(s) { return allResults.value.filter(r => r.set === s && r.result === 'L').length }
+function setTiesFor(s) { return allResults.value.filter(r => r.set === s && r.result === 'T').length }
+function setPointsFor(s) { return allRolls.value.filter(r => r.set === s).reduce((sum, r) => sum + r.points, 0) }
+
+// First-open hint
+const showHint = ref(false)
+function dismissHint() { showHint.value = false; localStorage.setItem('bunco-first-seen', '1') }
+onMounted(() => {
+  if (!localStorage.getItem('bunco-first-seen')) showHint.value = true
+})
+</script>
+
+<style>
+@import './assets/tokens.css';
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* Hint bar */
+.hint-bar {
+  background: var(--surface);
+  color: var(--text-mid);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  padding: 10px 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* BUNCO! Celebration */
+.bunco-celebration {
+  position: fixed;
+  inset: 0;
+  background: var(--accent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  animation: bunco-entrance 0.3s ease-out;
+}
+
+@keyframes bunco-entrance {
+  from { transform: scale(0.8); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+.bunco-text {
+  font-family: 'Oswald', 'Impact', sans-serif;
+  font-weight: 700;
+  font-size: clamp(72px, 20vw, 120px);
+  color: var(--bg);
+  animation: bunco-pulse 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes bunco-pulse {
+  from { transform: scale(1); }
+  to   { transform: scale(1.05); }
+}
+
+.bunco-sub {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  color: var(--bg);
+  opacity: 0.7;
+  margin-top: 16px;
+}
+
+/* Overlay screens (W/L/T, set-end, game-over) */
+.overlay-screen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  gap: 24px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.overlay-title {
+  font-family: 'Oswald', 'Impact', sans-serif;
+  font-weight: 700;
+  font-size: 36px;
+  color: var(--text-hi);
+  text-align: center;
+}
+
+.overlay-subtitle {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  color: var(--text-mid);
+  margin-top: -16px;
+}
+
+/* W/L/T buttons */
+.wlt-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.wlt-btn {
+  flex: 1;
+  height: 64px;
+  border: none;
+  border-radius: 12px;
+  font-family: 'Oswald', 'Impact', sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wlt-btn.win  { background: var(--win);  color: #000; }
+.wlt-btn.loss { background: var(--loss); color: #fff; }
+.wlt-btn.tie  { background: var(--tie);  color: #fff; }
+
+.ghost-btn {
+  background: none;
+  border: 1px solid var(--surface-hi);
+  border-radius: 12px;
+  color: var(--text-mid);
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  padding: 10px 24px;
+  cursor: pointer;
+}
+
+/* Set summary */
+.set-summary {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  color: var(--text-hi);
+}
+
+.summary-row span:first-child { color: var(--text-mid); }
+
+/* Per-set table */
+.game-over { justify-content: flex-start; padding-top: 60px; }
+
+.per-set-table {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table-header, .table-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+  padding: 10px 16px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+}
+
+.table-header {
+  color: var(--text-lo);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--bg);
+}
+
+.table-row { color: var(--text-hi); }
+.table-row:nth-child(odd) { background: var(--surface-hi); }
+
+.totals-row {
+  border-top: 1px solid var(--bg);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Primary button */
+.primary-btn {
+  width: 100%;
+  height: 56px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--bg);
+  font-family: 'Oswald', 'Impact', sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.primary-btn:active { filter: brightness(1.1); }
+</style>

@@ -1,0 +1,23 @@
+{
+  "name": "simple-bunco-scorecard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@vueuse/core": "^12.0.0",
+    "vue": "^3.5.32"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/test-utils": "^2.4.0",
+    "jsdom": "^26.0.0",
+    "vite": "^8.0.0",
+    "vitest": "^4.0.0"
+  }
+}
