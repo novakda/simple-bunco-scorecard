@@ -31,7 +31,7 @@
       </div>
       <div class="summary-row">
         <span>Overall</span>
-        <span>{{ totalWins }}W · {{ totalLosses }}L · {{ totalTies }}T</span>
+        <span>{{ totalWins }}W · {{ totalLosses }}L · {{ totalTies }}T · {{ totalPoints }}pts</span>
       </div>
     </div>
     <button class="primary-btn" @click="nextSet">
@@ -61,6 +61,7 @@
         <span>{{ totalPoints }}</span>
       </div>
     </div>
+    <div class="buncos-stat">{{ totalBuncos }} Bunco{{ totalBuncos !== 1 ? 's' : '' }} scored</div>
     <button class="primary-btn" @click="newGame">New Game</button>
   </div>
 
@@ -80,7 +81,7 @@
     />
     <ScoreEntry
       :phase="phase"
-      :recordScore="recordScore"
+      :recordScore="handleRecordScore"
       :undoLast="undoLast"
       :endRound="endRound"
     />
@@ -89,6 +90,15 @@
       :setResults="setResults"
       :currentRound="currentRound"
     />
+
+    <!-- Reset: ghost button → inline confirm bar -->
+    <div v-if="!confirmingReset" class="reset-row">
+      <button class="ghost-btn reset-btn" @click="confirmingReset = true">New Game</button>
+    </div>
+    <div v-else class="reset-confirm-row">
+      <button class="ghost-btn" @click="confirmingReset = false">Cancel</button>
+      <button class="danger-btn" @click="handleNewGame">Yes, reset</button>
+    </div>
   </div>
 </template>
 
@@ -105,6 +115,18 @@ const {
   recordScore, endRound, commitRound, nextSet, undoLast, newGame,
   _state,
 } = useGameState()
+
+const confirmingReset = ref(false)
+
+function handleRecordScore(points, type) {
+  confirmingReset.value = false
+  recordScore(points, type)
+}
+
+function handleNewGame() {
+  confirmingReset.value = false
+  newGame()
+}
 
 const isBuncoPhase = computed(
   () => phase.value === 'round-end' && lastRoll.value?.type === 'bunco'
@@ -138,6 +160,7 @@ const totalWins = computed(() => allResults.value.filter(r => r.result === 'W').
 const totalLosses = computed(() => allResults.value.filter(r => r.result === 'L').length)
 const totalTies = computed(() => allResults.value.filter(r => r.result === 'T').length)
 const totalPoints = computed(() => allRolls.value.reduce((s, r) => s + r.points, 0))
+const totalBuncos = computed(() => allRolls.value.filter(r => r.type === 'bunco').length)
 
 function setWinsFor(s) { return allResults.value.filter(r => r.set === s && r.result === 'W').length }
 function setLossesFor(s) { return allResults.value.filter(r => r.set === s && r.result === 'L').length }
@@ -299,7 +322,19 @@ onMounted(() => {
 .summary-row span:first-child { color: var(--text-mid); }
 
 /* Per-set table */
-.game-over { justify-content: flex-start; padding-top: 60px; }
+.game-over {
+  justify-content: flex-start;
+  padding-top: 0;
+  border-top: 4px solid var(--accent);
+}
+
+.buncos-stat {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 600;
+  text-align: center;
+}
 
 .per-set-table {
   width: 100%;
@@ -350,4 +385,41 @@ onMounted(() => {
 }
 
 .primary-btn:active { filter: brightness(1.1); }
+
+/* Reset button */
+.reset-row {
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px 16px;
+}
+
+.reset-btn {
+  font-size: 13px;
+  padding: 8px 20px;
+  color: var(--text-lo);
+  border-color: var(--surface-hi);
+}
+
+.reset-confirm-row {
+  display: flex;
+  gap: 12px;
+  padding: 8px 16px 16px;
+}
+
+.reset-confirm-row .ghost-btn,
+.reset-confirm-row .danger-btn {
+  flex: 1;
+  height: 44px;
+}
+
+.danger-btn {
+  background: var(--loss);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
 </style>

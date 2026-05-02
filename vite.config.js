@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
-  base: '/simple-bunco-scorecard/',
+  base: '/tools/bunco/',
   plugins: [vue()],
   resolve: {
     alias: {
