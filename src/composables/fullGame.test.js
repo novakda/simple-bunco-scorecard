@@ -6,8 +6,9 @@
  * rules of Bunco.
  *
  * Rules reference (dicegamedepot.com/bunco-rules, mplgames.com/blog/how-to-play-bunco):
- *   - A game is SIX rounds. The ROUND NUMBER IS THE TARGET: round 1 rolls for 1s,
- *     round 3 rolls for 3s, and so on.
+ *   - A set is one pass through targets 1-6. The ROUND NUMBER IS THE TARGET:
+ *     round 1 rolls for 1s, round 3 rolls for 3s, and so on.
+ *   - This group plays THREE sets, so a full game is 18 rounds.
  *   - Each die matching the round's target scores 1 point.
  *   - All three dice matching the target is a BUNCO and scores 21.
  *   - All three dice matching each other but NOT the target is a "mini Bunco", 5 points.
@@ -50,8 +51,8 @@ function rng(seed) {
   }
 }
 
-const SETS = 6
-const ROUNDS_PER_SET = 6
+const SETS = 3       // the group plays three sets
+const ROUNDS_PER_SET = 6  // each set is one pass through targets 1-6
 
 /** Roll three physical dice. */
 function rollDice(rand) {
@@ -75,7 +76,7 @@ function scoreRoll(dice, target) {
 
 /**
  * Drive the app the way a player would for one roll, given the physical dice.
- * Mirrors the actual UI affordances: 0/1/2/3 buttons, BUNCO!, MINI-BUNCO.
+ * Mirrors the actual UI affordances: 0/1/2 buttons, BUNCO!, MINI-BUNCO.
  */
 function tapForRoll(g, dice, target) {
   const { points, kind } = scoreRoll(dice, target)
@@ -126,7 +127,7 @@ function playFullGame(seed, { maxRollsPerRound = 40 } = {}) {
         ledger.results.push({ set, round, result })
       }
     }
-    // Round 6 committed => 'set-end'. Advance.
+    // Round 6 committed => 'set-end'. Advance to the next set.
     if (g.phase.value === 'set-end') g.nextSet()
   }
 
@@ -140,17 +141,17 @@ function playFullGame(seed, { maxRollsPerRound = 40 } = {}) {
 describe('full game simulation — structure', () => {
   const SEEDS = Array.from({ length: 50 }, (_, i) => 1000 + i)
 
-  it('every game reaches game-over after 6 sets of 6 rounds', () => {
+  it('every game reaches game-over after 3 sets of 6 rounds', () => {
     for (const seed of SEEDS) {
       const { g } = playFullGame(seed)
       expect(g.phase.value, `seed ${seed}`).toBe('game-over')
     }
   })
 
-  it('records exactly 36 round results per game', () => {
+  it('records exactly 18 round results per game', () => {
     for (const seed of SEEDS) {
       const { g } = playFullGame(seed)
-      expect(g._state.value.results.length, `seed ${seed}`).toBe(36)
+      expect(g._state.value.results.length, `seed ${seed}`).toBe(SETS * ROUNDS_PER_SET)
     }
   })
 
@@ -248,14 +249,14 @@ describe('full game simulation — arithmetic', () => {
     }
   })
 
-  it('W/L/T tallies across all sets sum to 36', () => {
+  it('W/L/T tallies across all sets sum to every round played', () => {
     for (const seed of SEEDS) {
       const { g } = playFullGame(seed)
       const res = g._state.value.results
       const w = res.filter((r) => r.result === 'W').length
       const l = res.filter((r) => r.result === 'L').length
       const t = res.filter((r) => r.result === 'T').length
-      expect(w + l + t, `seed ${seed}`).toBe(36)
+      expect(w + l + t, `seed ${seed}`).toBe(SETS * ROUNDS_PER_SET)
     }
   })
 })
@@ -273,15 +274,15 @@ describe('target number follows the round, per Bunco rules', () => {
       .map((t) => `set ${t.set} round ${t.round}: app says ${t.appTarget}, rules say ${t.correctTarget}`)
     expect(
       wrong.length,
-      `target number is wrong in ${wrong.length}/36 rounds. Examples:\n  ${sample.join('\n  ')}`,
+      `target number is wrong in ${wrong.length}/${SETS * ROUNDS_PER_SET} rounds. Examples:\n  ${sample.join('\n  ')}`,
     ).toBe(0)
   })
 
-  it('a full game rolls for each of 1..6 exactly six times', () => {
+  it('a full game rolls for each of 1..6 once per set', () => {
     const { ledger } = playFullGame(11)
     const counts = {}
     for (const t of ledger.targetsSeen) counts[t.appTarget] = (counts[t.appTarget] ?? 0) + 1
-    expect(counts).toEqual({ 1: 6, 2: 6, 3: 6, 4: 6, 5: 6, 6: 6 })
+    expect(counts).toEqual({ 1: SETS, 2: SETS, 3: SETS, 4: SETS, 5: SETS, 6: SETS })
   })
 })
 
@@ -409,10 +410,10 @@ describe('phase machine under simulation', () => {
     }
   })
 
-  it('the set counter never exceeds 6', () => {
+  it('the set counter never exceeds the configured total', () => {
     const g = fresh()
     for (let i = 0; i < 200; i++) g.nextSet()
-    expect(g.currentSet.value).toBeLessThanOrEqual(6)
+    expect(g.currentSet.value).toBeLessThanOrEqual(SETS)
   })
 
   it('the round counter never exceeds 6', () => {
@@ -463,7 +464,7 @@ describe('double commitRound for one round', () => {
 describe('new game after a full game', () => {
   it('clears rolls, results, set and round', () => {
     const { g } = playFullGame(777)
-    expect(g._state.value.results.length).toBe(36)
+    expect(g._state.value.results.length).toBe(SETS * ROUNDS_PER_SET)
     g.newGame()
     expect(g._state.value.rolls).toEqual([])
     expect(g._state.value.results).toEqual([])

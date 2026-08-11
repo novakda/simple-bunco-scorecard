@@ -2,7 +2,7 @@
   <div class="score-entry">
     <div class="number-grid">
       <button
-        v-for="n in [0, 1, 2, 3]"
+        v-for="n in [0, 1, 2]"
         :key="n"
         class="score-btn number-btn"
         @click="recordScore(n, 'normal')"
@@ -35,9 +35,11 @@ defineProps({
   padding: 0 16px;
 }
 
+/* Three buttons: a plain roll can only score 0, 1 or 2 matching dice.
+   Three on the target is a Bunco, which has its own button. */
 .number-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 

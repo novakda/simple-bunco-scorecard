@@ -1,6 +1,10 @@
 import { computed } from 'vue'
 import { useLocalStorage, useWakeLock } from '@vueuse/core'
 
+// A set is one full pass through targets 1-6. The group plays three sets.
+export const ROUNDS_PER_SET = 6
+export const TOTAL_SETS = 3
+
 const defaultState = () => ({
   currentSet: 1,
   currentRound: 1,
@@ -35,7 +39,10 @@ export function useGameState() {
 
   const currentSet = computed(() => state.value.currentSet)
   const currentRound = computed(() => state.value.currentRound)
-  const targetNumber = computed(() => state.value.currentSet)
+  // The ROUND is the target: round 1 rolls for 1s, round 3 for 3s. A set is one
+  // full pass through 1-6. Previously this read currentSet, which meant all six
+  // rounds of a set showed the same target.
+  const targetNumber = computed(() => state.value.currentRound)
   const phase = computed(() => state.value.phase)
 
   const roundPoints = computed(() =>
@@ -82,13 +89,17 @@ export function useGameState() {
   }
 
   function commitRound(result) {
+    // Guard: the BUNCO! screen both auto-advances after 2s and accepts a tap.
+    // Without this, a double-tap fabricates a result for the next round and skips it.
+    if (state.value.phase !== 'round-end') return
+
     state.value.results.push({
       set: state.value.currentSet,
       round: state.value.currentRound,
       result,
     })
 
-    if (state.value.currentRound === 6) {
+    if (state.value.currentRound === ROUNDS_PER_SET) {
       state.value.phase = 'set-end'
     } else {
       state.value.currentRound++
@@ -97,7 +108,10 @@ export function useGameState() {
   }
 
   function nextSet() {
-    if (state.value.currentSet === 6) {
+    // Guard: unguarded, this skips the rest of the current set mid-play.
+    if (state.value.phase !== 'set-end') return
+
+    if (state.value.currentSet === TOTAL_SETS) {
       state.value.phase = 'game-over'
     } else {
       state.value.currentSet++
@@ -113,9 +127,17 @@ export function useGameState() {
 
     if (state.value.phase === 'round-end') {
       const last = rolls[rolls.length - 1]
-      if (!last) return
-      // Bunco is not undoable
-      if (last.type === 'bunco') return
+      if (!last) {
+        state.value.phase = 'playing'
+        return
+      }
+      // A mis-tapped BUNCO! is the largest possible scoring error (21 points),
+      // so it has to be recoverable: drop the roll and return to play.
+      if (last.type === 'bunco') {
+        rolls.splice(rolls.length - 1, 1)
+        state.value.phase = 'playing'
+        return
+      }
       // Manual endRound() — cancel back to playing
       state.value.phase = 'playing'
       return
