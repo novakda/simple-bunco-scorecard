@@ -56,7 +56,7 @@ const ROUNDS_PER_SET = 6  // each set is one pass through targets 1-6
 
 /** Roll three physical dice. */
 function rollDice(rand) {
-  return [1, 2, 3, 4, 5, 6].length && [
+  return [
     1 + Math.floor(rand() * 6),
     1 + Math.floor(rand() * 6),
     1 + Math.floor(rand() * 6),

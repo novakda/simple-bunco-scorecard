@@ -110,5 +110,5 @@ Three large separate buttons when `phase === 'round-end' && lastRoll.type !== 'b
 ### Empty State (first open)
 App opens directly in `phase='playing'`, set 1, round 1.
 On first open (detect via `bunco-first-seen` localStorage key):
-- Show dismissable hint bar: "Tap 0–3 to record your score. Tap BUNCO! for a Bunco."
+- Show dismissable hint bar: "Tap 0–2 for matching dice. Tap BUNCO! for three of the target."
 - Dismiss on first any-tap. Never shown again.
