@@ -49,7 +49,7 @@ Contrast: `--text-hi` on `--bg` = 17.4:1 (WCAG AAA). `--accent` on `--bg` = 8.7:
 
 | Element | Min Height |
 |---------|-----------|
-| 0 / 1 / 2 / 3 score buttons | 64px |
+| 0 / 1 / 2 score buttons | 64px |
 | BUNCO! button | 80px |
 | MINI-BUNCO button | 56px |
 | End Round / Undo / Confirm | 48px |
@@ -60,11 +60,13 @@ All interactive elements minimum 44px per WCAG. Above values are game-table UX m
 ## Score Entry Button Layout
 
 ```
-[ 0  ] [ 1  ]      ← 2-col grid, 64px height each
-[ 2  ] [ 3  ]
+[ 0 ] [ 1 ] [ 2 ]  ← 3-col grid, 64px height each
 [ BUNCO! — full width, 80px, --accent fill ]
 [ MINI-BUNCO — full width, 56px, --accent-dim fill ]
 ```
+
+Only 0, 1 and 2 appear: a plain roll scores one point per die matching the
+round's target, and three on the target is a Bunco (21), not 3 points.
 
 CSS approach: CSS custom properties only. No Tailwind. No component library.
 
@@ -94,6 +96,7 @@ Full-screen takeover when `phase === 'round-end' && lastRoll.type === 'bunco'`:
 - Animation: CSS `@keyframes` pulse/scale entrance
 - Haptic: `navigator.vibrate(200)` on tap (Android; no-op elsewhere)
 - Auto-advance: `commitRound('W')` after 2000ms; tap anywhere to advance early
+- "Not a Bunco? Undo" button removes the roll and returns to play, cancelling the auto-advance
 
 ### W/L/T Picker
 Three large separate buttons when `phase === 'round-end' && lastRoll.type !== 'bunco'`:
@@ -107,5 +110,5 @@ Three large separate buttons when `phase === 'round-end' && lastRoll.type !== 'b
 ### Empty State (first open)
 App opens directly in `phase='playing'`, set 1, round 1.
 On first open (detect via `bunco-first-seen` localStorage key):
-- Show dismissable hint bar: "Tap 0–3 to record your score. Tap BUNCO! for a Bunco."
+- Show dismissable hint bar: "Tap 0–2 for matching dice. Tap BUNCO! for three of the target."
 - Dismiss on first any-tap. Never shown again.

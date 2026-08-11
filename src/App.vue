@@ -3,6 +3,10 @@
   <div v-if="isBuncoPhase" class="bunco-celebration" @click="commitRound('W')">
     <div class="bunco-text">BUNCO!</div>
     <div class="bunco-sub">Tap to continue</div>
+    <!-- Without this the largest possible scoring error (21 points) is the only
+         one that cannot be taken back. Tapping it also cancels the auto-advance,
+         because undoLast returns to 'playing' and the watcher clears the timer. -->
+    <button class="bunco-undo" @click.stop="undoLast">Not a Bunco? Undo</button>
   </div>
 
   <!-- W/L/T Picker -->
@@ -35,7 +39,7 @@
       </div>
     </div>
     <button class="primary-btn" @click="nextSet">
-      {{ currentSet === 6 ? 'See Final Results' : 'Next Set →' }}
+      {{ currentSet === TOTAL_SETS ? 'See Final Results' : 'Next Set →' }}
     </button>
   </div>
 
@@ -46,7 +50,7 @@
       <div class="table-header">
         <span>Set</span><span>W</span><span>L</span><span>T</span><span>Pts</span>
       </div>
-      <div v-for="s in 6" :key="s" class="table-row">
+      <div v-for="s in TOTAL_SETS" :key="s" class="table-row">
         <span>{{ s }}</span>
         <span>{{ setWinsFor(s) }}</span>
         <span>{{ setLossesFor(s) }}</span>
@@ -69,7 +73,7 @@
   <div v-else class="app-layout">
     <!-- First-open hint -->
     <div v-if="showHint" class="hint-bar" @click="dismissHint">
-      Tap 0–3 to record your score. Tap BUNCO! for a Bunco. ✕
+      Tap 0–2 for matching dice. Tap BUNCO! for three of the target. ✕
     </div>
 
     <GameContext
@@ -106,7 +110,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import GameContext from './components/GameContext.vue'
 import ScoreEntry from './components/ScoreEntry.vue'
 import RoundHistory from './components/RoundHistory.vue'
-import { useGameState } from './composables/useGameState.js'
+import { useGameState, TOTAL_SETS } from './composables/useGameState.js'
 
 const {
   currentSet, currentRound, targetNumber, roundPoints, pointsToWin,
@@ -232,6 +236,26 @@ onMounted(() => {
   color: var(--bg);
   opacity: 0.7;
   margin-top: 16px;
+}
+
+.bunco-undo {
+  margin-top: 32px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid var(--bg);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--bg);
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 0.75;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bunco-undo:active {
+  opacity: 1;
 }
 
 /* Overlay screens (W/L/T, set-end, game-over) */

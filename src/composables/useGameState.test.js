@@ -22,7 +22,7 @@ vi.mock('@vueuse/core', () => {
 })
 
 // Re-import after mock is in place
-const { useGameState } = await import('./useGameState.js')
+const { useGameState, TOTAL_SETS } = await import('./useGameState.js')
 
 function fresh() {
   vi.resetModules()
@@ -106,13 +106,16 @@ describe('useGameState — phase transition table', () => {
     expect(g.phase.value).toBe('set-end')
   })
 
-  // Row 10: round-end + undoLast, last roll is bunco → no-op
-  it('undoLast is no-op after bunco', () => {
+  // Row 10: round-end + undoLast, last roll is bunco → drop it, return to playing.
+  // Previously a no-op, which made a mis-tapped BUNCO! (21 points, the largest
+  // possible scoring error) the one mistake you could not take back.
+  it('undoLast takes back a mis-tapped bunco', () => {
     g.recordScore(21, 'bunco')
     expect(g.phase.value).toBe('round-end')
     g.undoLast()
-    expect(g.phase.value).toBe('round-end')
-    expect(g.lastRoll.value.type).toBe('bunco')
+    expect(g.phase.value).toBe('playing')
+    expect(g.roundPoints.value).toBe(0)
+    expect(g.lastRoll.value).toBe(null)
   })
 
   // Row 11: round-end + undoLast, last roll not bunco → playing (cancel endRound)
@@ -136,9 +139,10 @@ describe('useGameState — phase transition table', () => {
     expect(g.currentRound.value).toBe(1)
   })
 
-  // Row 13: set-end + nextSet, currentSet === 6 → game-over
-  it('nextSet on set 6 transitions → game-over', () => {
-    g._state.value.currentSet = 6
+  // Row 13: set-end + nextSet, on the final set → game-over.
+  // The group plays THREE sets of 1-6, not six.
+  it('nextSet on the final set transitions → game-over', () => {
+    g._state.value.currentSet = TOTAL_SETS
     g._state.value.currentRound = 6
     g.endRound()
     g.commitRound('T')
