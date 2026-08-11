@@ -1,11 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
+// Records every wake-lock request so a test can assert one actually happens.
+// The previous mock was `useWakeLock: () => {}`, which swallowed the fact that the
+// composable never called request() — the mock was the reason the no-op survived.
+// vi.hoisted() is required: vi.mock factories run before module-body initialisation.
+const { wakeLockRequests } = vi.hoisted(() => ({ wakeLockRequests: [] }))
+
 // Mock @vueuse/core before importing the composable
 vi.mock('@vueuse/core', () => {
   const { ref } = require('vue')
   return {
     useLocalStorage: (_key, initial) => ref(JSON.parse(JSON.stringify(initial))),
-    useWakeLock: () => {},
+    useWakeLock: () => ({
+      request: (type) => {
+        wakeLockRequests.push(type)
+        return Promise.resolve()
+      },
+      release: () => Promise.resolve(),
+    }),
   }
 })
 
@@ -186,5 +198,15 @@ describe('useGameState — phase transition table', () => {
     g.recordScore(1, 'normal')
     g._state.value.rolls.push({ set: 2, round: 1, points: 3, type: 'normal' })
     expect(g.setRollHistory.value.every(r => r.set === 1)).toBe(true)
+  })
+})
+
+describe('useGameState — screen wake lock', () => {
+  it('requests a screen wake lock on init', () => {
+    const before = wakeLockRequests.length
+    fresh()
+    // Regression guard: useWakeLock() alone acquires nothing — only request() does.
+    // The phone must not sleep between rolls during a game.
+    expect(wakeLockRequests.slice(before)).toEqual(['screen'])
   })
 })

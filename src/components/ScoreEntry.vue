@@ -1,5 +1,5 @@
 <template>
-  <div class="score-entry" :class="{ disabled: phase !== 'playing' }">
+  <div class="score-entry">
     <div class="number-grid">
       <button
         v-for="n in [0, 1, 2, 3]"
@@ -18,8 +18,9 @@
 </template>
 
 <script setup>
+// No `phase` prop: App.vue routes every non-'playing' phase to a full-screen
+// overlay, so this component only ever renders while phase === 'playing'.
 defineProps({
-  phase: String,
   recordScore: Function,
   undoLast: Function,
   endRound: Function,
@@ -32,12 +33,6 @@ defineProps({
   flex-direction: column;
   gap: 8px;
   padding: 0 16px;
-}
-
-.score-entry.disabled .score-btn {
-  opacity: 0.35;
-  pointer-events: none;
-  cursor: default;
 }
 
 .number-grid {
