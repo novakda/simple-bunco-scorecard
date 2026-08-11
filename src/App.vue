@@ -80,7 +80,6 @@
       :pointsToWin="pointsToWin"
     />
     <ScoreEntry
-      :phase="phase"
       :recordScore="handleRecordScore"
       :undoLast="undoLast"
       :endRound="endRound"
@@ -103,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import GameContext from './components/GameContext.vue'
 import ScoreEntry from './components/ScoreEntry.vue'
 import RoundHistory from './components/RoundHistory.vue'
@@ -137,7 +136,6 @@ const isRoundEndPhase = computed(
 
 // BUNCO! auto-advance
 let buncoTimer = null
-import { watch } from 'vue'
 watch(isBuncoPhase, (val) => {
   if (val) {
     if (navigator.vibrate) navigator.vibrate(200)

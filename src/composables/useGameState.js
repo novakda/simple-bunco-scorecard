@@ -23,7 +23,13 @@ export function useGameState() {
   // Guard: ensure arrays exist (handles partial/legacy localStorage values)
   if (!Array.isArray(state.value?.rolls)) state.value = { ...defaultState(), ...state.value, rolls: [], results: [] }
 
-  useWakeLock()
+  // useWakeLock() only wires up listeners — nothing holds the screen awake until
+  // request() is called. Without this the phone sleeps between rolls mid-game.
+  const { request: requestWakeLock } = useWakeLock()
+  requestWakeLock('screen').catch(() => {
+    // Unsupported browser, or the document isn't visible yet — @vueuse re-requests
+    // on the next visibilitychange, so there's nothing to recover here.
+  })
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
