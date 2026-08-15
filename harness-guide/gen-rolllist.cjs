@@ -58,6 +58,7 @@ kbd{font:.75rem ui-monospace,monospace;border:1px solid #333;border-bottom-width
 .pill.on{background:#0d2a17;color:var(--ok);border:1px solid #1f5c37}
 .pill.off{background:#2a1010;color:#ef4444;border:1px solid #5c1f1f}
 .pill.man{background:#2a2200;color:var(--ac);border:1px solid #5c4a1f}
+.bad.hist{background:#1a1a1a;border-color:#333;color:var(--mid)}
 .undobox{margin-top:.6rem;padding:.7rem .8rem;border-radius:8px;background:#3a1a00;border:1px solid var(--ac);color:#ffd591;font-size:.9rem}
 .bad{background:#2a1010;border:1px solid #5c1f1f;color:#ffb4b4;padding:.5rem .7rem;border-radius:8px;margin-top:.5rem;font-size:.85rem}
 </style></head><body>
@@ -152,7 +153,9 @@ async function poll(){
       + '<span class="pill '+(strict?'man':'on')+'" id="modepill" title="click to switch">'+(strict?'STRICT — prompts undo':'OBSERVE — flags only')+'</span>'
       + (f.undos ? '<span>'+f.undos+' undo'+(f.undosPrompted?' ('+f.undosPrompted+' prompted)':'')+(f.undoVerified===f.undos?' ✓ verified':'')+'</span>' : '')
       + (f.deadTaps ? '<span class="pill off">'+f.deadTaps+' dead tap</span>' : '')
-      + (bad ? '<div class="bad">Last wrong tap: '+ (f.mismatches[bad-1].detail||'') +'</div>' : '');
+      + (bad ? (f.mismatches[bad-1].index === f.totalRolls
+          ? '<div class="bad">Last wrong tap: '+ (f.mismatches[bad-1].detail||'') +'</div>'
+          : '<div class="bad hist">'+bad+' wrong tap'+(bad>1?'s':'')+' earlier this session &mdash; nothing outstanding where you are now</div>') : '');
     if (bad > seenBad) { seenBad = bad; try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA=').play() } catch(e){} }
     // Undo detection: if the most recent mismatch is the tap the app just took,
     // that tap is recoverable right now. Flag it; do not command it — a guide that
@@ -179,9 +182,17 @@ async function poll(){
           body:JSON.stringify({kind:'prompt', atRoll:lastBad.index, detail:lastBad.detail,
                                expected:lastBad.expected, got:lastBad.got})}).catch(function(){});
       }
-    } else { ub.style.display = 'none'; promptedFor = null; }
+    } else { ub.style.display = 'none'; }
 
     var sig = f.totalRolls + ':' + f.totalResults;
+    // AUTO-REARM. The app is the source of truth. Browsing with the keys
+    // between taps is fine, but the moment the app records one, follow it
+    // again. Previously a single keypress disabled the sync for the rest of
+    // the run: the player distrusts the guide, nudges it with space, and the
+    // nudge is what actually breaks it. Being stuck behind the app is the
+    // precise failure this sync exists to prevent, so it must not be reachable
+    // by accident.
+    if (sig !== lastSig && !synced) { synced = true; }
     if (synced && sig !== lastSig) {
       lastSig = sig;
       var i = locate(f.totalRolls, f.totalResults);
