@@ -12,7 +12,10 @@
     "sync": "npm run build && node scripts/sync.js",
     "golden": "node scripts/generate-golden.js --find --out telemetry/golden-game.json",
     "collect": "node scripts/telemetry-collector.js",
-    "replay": "node scripts/telemetry-collector.js --replay"
+    "replay": "node scripts/telemetry-collector.js --replay",
+    "serve:app": "node harness-guide/appserve.cjs dist",
+    "serve:guide": "node harness-guide/listserve.cjs",
+    "tunnel": "node scripts/tunnel.js"
   },
   "dependencies": {
     "@vueuse/core": "^12.0.0",
