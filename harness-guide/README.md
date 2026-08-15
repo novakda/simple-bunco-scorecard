@@ -35,16 +35,31 @@ node gen-rolllist.cjs ../telemetry/golden-game.json rolllist.html
   because it had no `package.json`. This repo declares `"type": "module"`, so as `.js` they threw
   `ReferenceError: require is not defined in ES module scope` — the recovery was inert until this
   was found. Renaming is the smaller change than rewriting three files to ESM.
-- The guide polls the collector's `GET /feed` every 700ms to locate itself in the golden run, and
-  posts mode changes to `POST /guide`. Those endpoints live in the committed
-  `scripts/telemetry-collector.js`, so that side is intact.
+- **The live-sync half was missing, and this line used to claim it was not.** The sentence here
+  previously read that the guide polls `GET /feed` every 700ms and posts mode changes to
+  `POST /guide` — true of the *collector*, which has both endpoints, but **not** of the recovered
+  generator, which emitted a guide that advanced only by keypress. The recovery had pulled back the
+  generator's original heredoc body; the sync arrived later in that session as four separate
+  string-replacement patches applied to the scratch copy, and those were never part of any heredoc.
+  So the reconstructed guide was the *hand-advanced* version — precisely the method whose desync is
+  method finding #1055, the one that turned one dropped input into 46 rolls read as failures.
+  **Restored 2026-08-15** from the same transcript (lines 1473, 1554, 1570, 1631), reapplied as 19
+  anchored replacements each asserted to match exactly once. What came back: `tapsBefore` /
+  `resultsBefore` on every step so a feed reading locates the guide in the run; the 700ms poll and
+  auto-advance; the live banner; the running round total on each row; undo detection that flags a
+  still-recoverable tap; and the STRICT/OBSERVE mode toggle that logs its prompts to the collector so
+  a prompted undo stays distinguishable from a spontaneous one. Verified in a real browser: posting a
+  single golden-matching tap moved the guide from "tap 1 of 9" to "tap 2 of 9" with no keypress.
 
 ## The gap this does not close
 
-The guide only ever **displayed** state and logged the operator's strict/off toggle. There is no
-channel back to the tester's device — during the session Dan was both phone and laptop, closing the
-loop by hand. Steering a *second* person live is unbuilt, and is the open question tracked in work
-item #1061.
+The guide **reads** the app's state and **displays** it. There is no channel back to the tester's
+device — during the session Dan was both phone and laptop, closing the loop by hand. Steering a
+*second* person live is unbuilt, and is the open question tracked in work item #1061.
+
+Note the asymmetry the sync does and does not fix: the guide can now follow the app, so a dropped
+input no longer desyncs the two surfaces. It still cannot make the phone do anything, so a wrong tap
+is *flagged* on the laptop and must be *undone* on the phone by a human who is looking at both.
 
 ## The lesson, which is the durable part
 
