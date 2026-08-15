@@ -1,5 +1,6 @@
 import { computed } from 'vue'
 import { useLocalStorage, useWakeLock } from '@vueuse/core'
+import { createTelemetry } from './useTelemetry.js'
 
 // A set is one full pass through targets 1-6. The group plays three sets.
 export const ROUNDS_PER_SET = 6
@@ -52,6 +53,15 @@ export function useGameState() {
   )
 
   const pointsToWin = computed(() => Math.max(0, 21 - roundPoints.value))
+
+  // How many rolls have been entered this round. A zero-point roll moves neither
+  // the score nor anything else on screen, so without this the most common tap
+  // in the game produces no visible change and you cannot tell it registered.
+  const rollsThisRound = computed(() =>
+    state.value.rolls.filter(
+      r => r.set === state.value.currentSet && r.round === state.value.currentRound
+    ).length
+  )
 
   const setRollHistory = computed(() =>
     state.value.rolls.filter(r => r.set === state.value.currentSet)
@@ -163,23 +173,52 @@ export function useGameState() {
     newGame()
   }
 
+  // ── Telemetry ─────────────────────────────────────────────────────────────
+  // Inert unless a collector is configured (see useTelemetry.js). When it is,
+  // every action is logged with the state it produced, so a live session can be
+  // diffed against a simulated one.
+  const telemetry = createTelemetry(() => ({
+    set: state.value.currentSet,
+    round: state.value.currentRound,
+    target: state.value.currentRound,
+    phase: state.value.phase,
+    roundPoints: roundPoints.value,
+    rollsInRound: state.value.rolls.filter(
+      r => r.set === state.value.currentSet && r.round === state.value.currentRound
+    ).length,
+    totalRolls: state.value.rolls.length,
+    totalResults: state.value.results.length,
+    // The roll as the app actually stored it — this is what gets diffed against
+    // the expected roll, so it has to be the stored record, not the tap that
+    // produced it (MINI-BUNCO taps 0 and stores 5).
+    last: state.value.rolls.length
+      ? { points: state.value.rolls[state.value.rolls.length - 1].points, type: state.value.rolls[state.value.rolls.length - 1].type }
+      : null,
+    lastResult: state.value.results.length
+      ? state.value.results[state.value.results.length - 1].result
+      : null,
+  }))
+
+  const actions = { recordScore, endRound, commitRound, nextSet, undoLast, newGame, resetGame }
+  if (telemetry.enabled) {
+    for (const name of Object.keys(actions)) {
+      actions[name] = telemetry.wrap(name, actions[name])
+    }
+  }
+
   return {
     currentSet,
     currentRound,
     targetNumber,
     roundPoints,
     pointsToWin,
+    rollsThisRound,
     setRollHistory,
     setResults,
     phase,
     lastRoll,
-    recordScore,
-    endRound,
-    commitRound,
-    nextSet,
-    undoLast,
-    newGame,
-    resetGame,
+    ...actions,
+    telemetry,
     _state: state,
   }
 }

@@ -7,11 +7,16 @@
          one that cannot be taken back. Tapping it also cancels the auto-advance,
          because undoLast returns to 'playing' and the watcher clears the timer. -->
     <button class="bunco-undo" @click.stop="undoLast">Not a Bunco? Undo</button>
+    <div class="bunco-countdown"><i :style="{ width: buncoProgress + '%' }"></i></div>
   </div>
 
   <!-- W/L/T Picker -->
   <div v-else-if="isRoundEndPhase" class="overlay-screen">
     <div class="overlay-title">Round {{ currentRound }} complete</div>
+    <!-- The score you just spent a round accumulating, shown at the moment you
+         are asked to judge the round. Without it there is nothing to check your
+         own tally against, and commitRound cannot be undone. -->
+    <div class="overlay-score">{{ roundPoints }} <span>points</span></div>
     <div class="overlay-subtitle">How did you finish?</div>
     <div class="wlt-row">
       <button class="wlt-btn win" @click="commitRound('W')">WIN</button>
@@ -82,6 +87,7 @@
       :targetNumber="targetNumber"
       :roundPoints="roundPoints"
       :pointsToWin="pointsToWin"
+      :rollsThisRound="rollsThisRound"
     />
     <ScoreEntry
       :recordScore="handleRecordScore"
@@ -113,7 +119,7 @@ import RoundHistory from './components/RoundHistory.vue'
 import { useGameState, TOTAL_SETS } from './composables/useGameState.js'
 
 const {
-  currentSet, currentRound, targetNumber, roundPoints, pointsToWin,
+  currentSet, currentRound, targetNumber, roundPoints, pointsToWin, rollsThisRound,
   setRollHistory, setResults, phase, lastRoll,
   recordScore, endRound, commitRound, nextSet, undoLast, newGame,
   _state,
@@ -139,13 +145,27 @@ const isRoundEndPhase = computed(
 )
 
 // BUNCO! auto-advance
+const BUNCO_AUTO_MS = 6000
 let buncoTimer = null
+let buncoTick = null
+const buncoAutoAt = ref(0)
+const buncoRemaining = ref(BUNCO_AUTO_MS)
+const buncoProgress = computed(() => 100 * (1 - buncoRemaining.value / BUNCO_AUTO_MS))
 watch(isBuncoPhase, (val) => {
   if (val) {
     if (navigator.vibrate) navigator.vibrate(200)
-    buncoTimer = setTimeout(() => commitRound('W'), 2000)
+    // 2000ms was too short to read the screen, notice a mis-tap and reach the
+    // Undo beside it — which defeated the one affordance protecting the largest
+    // possible scoring error. The countdown is now visible rather than silent.
+    buncoAutoAt.value = Date.now() + BUNCO_AUTO_MS
+    buncoTimer = setTimeout(() => commitRound('W'), BUNCO_AUTO_MS)
+    buncoTick = setInterval(() => {
+      buncoRemaining.value = Math.max(0, buncoAutoAt.value - Date.now())
+    }, 100)
   } else {
     clearTimeout(buncoTimer)
+    clearInterval(buncoTick)
+    buncoRemaining.value = BUNCO_AUTO_MS
   }
 })
 
@@ -179,6 +199,69 @@ onMounted(() => {
 
 <style>
 @import './assets/tokens.css';
+
+/* iOS treats a quick second tap on an element as double-tap-to-zoom and swallows
+   the tap. Every control here is tapped in fast succession during a round, so
+   the gesture costs real inputs — and a lost tap is invisible, because a
+   zero-point roll does not move the score either. A live session on 2026-08-14
+   desynced from the golden game at roll 43 for exactly this reason.
+
+   `manipulation` disables the double-tap-zoom gesture on these elements ONLY.
+   Pinch-zoom still works across the page, so this does not take away the
+   resize affordance the way `user-scalable=no` on the viewport would (WCAG
+   1.4.4). Applied to `button` rather than to each class so controls added
+   later inherit it. */
+button,
+.bunco-celebration,
+.hint-bar {
+  touch-action: manipulation;
+}
+
+/* .score-btn clears -webkit-tap-highlight-color, which removes the only default
+   confirmation iOS gives a tap. Combined with a zero-point roll not moving the
+   score, the most common tap in the game produced no feedback at all. This puts
+   an immediate one back, without the highlight bleeding outside the radius. */
+button:active {
+  transform: scale(0.97);
+  filter: brightness(1.25);
+}
+@media (prefers-reduced-motion: reduce) {
+  button:active { transform: none; }
+}
+
+.overlay-score {
+  font-family: 'Oswald', 'Impact', sans-serif;
+  font-weight: 700;
+  font-size: 56px;
+  line-height: 1;
+  color: var(--accent);
+  margin: 4px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.overlay-score span {
+  font-family: 'Inter', 'Helvetica Neue', sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  color: var(--text-mid);
+}
+
+/* The auto-advance used to be invisible, so the Undo beside it looked available
+   for longer than it was. Showing the timer makes the deadline legible. */
+.bunco-countdown {
+  width: 60%;
+  max-width: 280px;
+  height: 4px;
+  margin-top: 20px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bunco-countdown i {
+  display: block;
+  height: 100%;
+  background: var(--bg);
+  transition: width 0.1s linear;
+}
 
 .app-layout {
   display: flex;
