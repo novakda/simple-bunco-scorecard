@@ -51,6 +51,24 @@ const C = {
   bold: (s) => `\x1b[1m${s}\x1b[0m`,
 }
 
+// Running round total after each golden roll, so the state left behind by an
+// undo can be VERIFIED against the golden game rather than merely counted.
+const goldenRunning = []
+if (golden) {
+  let run = 0, curKey = null
+  for (const r of golden.expectedRolls) {
+    const k = r.set + ':' + r.round
+    if (k !== curKey) { curKey = k; run = 0 }
+    run += r.points
+    goldenRunning.push(run)
+  }
+}
+
+// Prompts issued by the guide, so a prompted undo can be told apart from a
+// spontaneous one. Retained in the log either way — correcting the run must not
+// erase the evidence of what went wrong.
+let lastPrompt = null
+
 const stats = {
   events: 0,
   taps: 0,
@@ -61,6 +79,11 @@ const stats = {
   backgrounded: 0,
   gaps: [],
   rounds: 0,
+  undosPrompted: 0,
+  undosSpontaneous: 0,
+  undoVerified: 0,
+  undoBad: [],
+  prompts: 0,
   resultMatches: 0,
   resultMismatches: [],
   firstAt: null,
@@ -69,6 +92,7 @@ const stats = {
 
 let prevTotalRolls = 0
 let prevTotalResults = 0
+let buildId = null
 
 function describeExpected(e) {
   if (!e) return 'nothing (past the end of the golden game)'
@@ -91,7 +115,10 @@ function handleEvent(ev) {
   }
 
   if (ev.action === 'load') {
+    if (ev.args && ev.args.build) buildId = ev.args.build
     console.log(C.bold(`\n=== session ${ev.sid} started ===`))
+    console.log(C.dim(`    build ${buildId || 'unknown'}`))
+    if (ev.args && ev.args.ua) console.log(C.dim(`    ${ev.args.ua.slice(0, 90)}`))
     return
   }
 
@@ -103,10 +130,31 @@ function handleEvent(ev) {
     return
   }
 
-  // A roll was removed — the player corrected a mis-tap.
+  // A roll was removed. This is both a RECOVERY (the run stays alive) and a live
+  // exercise of the undo feature, so verify the state it left behind.
   if (a.totalRolls < prevTotalRolls) {
+    const removed = prevTotalRolls - a.totalRolls
     stats.undos++
-    console.log(`${C.dim(where.padEnd(6))} ${C.amber('undo')} roll removed, back to ${a.totalRolls} total`)
+    const prompted = lastPrompt && (ev.t - lastPrompt.t) < 120000
+    if (prompted) { stats.undosPrompted++; lastPrompt = null } else { stats.undosSpontaneous++ }
+
+    // Verified: exactly one roll gone, and the round total now equals the golden
+    // running total at the new position.
+    let verdict = 'unchecked'
+    if (golden) {
+      const idx = a.totalRolls - 1
+      const sameRound = idx >= 0 && golden.expectedRolls[idx] &&
+        golden.expectedRolls[idx].set === a.set && golden.expectedRolls[idx].round === a.round
+      const wantTotal = idx >= 0 && sameRound ? goldenRunning[idx] : 0
+      if (removed === 1 && a.roundPoints === wantTotal) { verdict = 'verified'; stats.undoVerified++ }
+      else {
+        verdict = `UNEXPECTED (removed ${removed}, round total ${a.roundPoints}, golden says ${wantTotal})`
+        stats.undoBad.push({ at: a.totalRolls, removed, got: a.roundPoints, want: wantTotal })
+      }
+    }
+    const tag = prompted ? C.cyan('prompted') : C.amber('spontaneous')
+    const vt = verdict === 'verified' ? C.green('verified') : verdict === 'unchecked' ? C.dim('unchecked') : C.red(verdict)
+    console.log(`${C.dim(where.padEnd(6))} ${C.amber('UNDO')} ${tag} — back to ${a.totalRolls} rolls, ${vt}`)
     prevTotalRolls = a.totalRolls
     return
   }
@@ -181,6 +229,28 @@ const server = createServer((req, res) => {
     return
   }
 
+  // Live feed for the roll-list guide: current position + any wrong taps, so the
+  // guide can follow the app instead of the player keeping two things in step.
+  if (req.method === 'GET' && req.url.startsWith('/feed')) {
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      .end(JSON.stringify({
+        totalRolls: prevTotalRolls,
+        totalResults: prevTotalResults,
+        taps: stats.taps,
+        matches: stats.matches,
+        mismatches: stats.mismatches,
+        undos: stats.undos,
+        undosPrompted: stats.undosPrompted,
+        undosSpontaneous: stats.undosSpontaneous,
+        undoVerified: stats.undoVerified,
+        undoBad: stats.undoBad,
+        prompts: stats.prompts,
+        deadTaps: stats.noops,
+        lastAt: stats.lastAt,
+      }))
+    return
+  }
+
   if (req.method === 'GET' && req.url === '/report') {
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(report(), null, 2))
     return
@@ -188,6 +258,30 @@ const server = createServer((req, res) => {
 
   if (req.method === 'GET') {
     res.writeHead(200, { 'content-type': 'text/plain' }).end(`bunco telemetry collector\nwriting ${OUT}\n`)
+    return
+  }
+
+  // Guide-side events (prompts, mode changes) go into the SAME append-only log,
+  // tagged source:'guide', so the history records what the tester was told as
+  // well as what they did.
+  if (req.method === 'POST' && req.url === '/guide') {
+    let body = ''
+    req.on('data', (c) => { body += c; if (body.length > 1e6) req.destroy() })
+    req.on('end', () => {
+      try {
+        const g = JSON.parse(body)
+        const rec = { source: 'guide', t: Date.now(), ...g }
+        appendFileSync(OUT, JSON.stringify(rec) + '\n')
+        if (g.kind === 'prompt') {
+          lastPrompt = rec
+          stats.prompts++
+          console.log(`${C.dim('guide '.padEnd(6))} ${C.cyan('PROMPT')} undo suggested at roll ${g.atRoll} — ${g.detail || ''}`)
+        }
+        res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}')
+      } catch (err) {
+        res.writeHead(400).end('{"ok":false}')
+      }
+    })
     return
   }
 
@@ -199,7 +293,9 @@ const server = createServer((req, res) => {
     })
     req.on('end', () => {
       try {
-        const { events } = JSON.parse(body)
+        const parsed = JSON.parse(body)
+        if (parsed.build && !buildId) buildId = parsed.build
+        const { events } = parsed
         for (const ev of events || []) {
           appendFileSync(OUT, JSON.stringify(ev) + '\n')
           handleEvent(ev)
@@ -226,6 +322,7 @@ function report() {
   const durationMs = stats.lastAt && stats.firstAt ? stats.lastAt - stats.firstAt : 0
   return {
     file: OUT,
+    build: buildId,
     golden: golden ? { seed: golden.seed, expectedRolls: golden.expectedRolls.length } : null,
     correctness: {
       tapsCompared: stats.taps,
@@ -244,6 +341,13 @@ function report() {
       deadTaps: stats.noops,
       timesBackgrounded: stats.backgrounded,
     },
+    recovery: {
+      guidePrompts: stats.prompts,
+      undosPrompted: stats.undosPrompted,
+      undosSpontaneous: stats.undosSpontaneous,
+      undoVerified: stats.undoVerified,
+      undoAnomalies: stats.undoBad,
+    },
     events: stats.events,
   }
 }
@@ -251,7 +355,8 @@ function report() {
 function printReport() {
   const r = report()
   console.log(C.bold('\n\n=== session report ==='))
-  console.log(`log: ${r.file}`)
+  console.log(`log:   ${r.file}`)
+  console.log(`build: ${r.build || C.amber('unknown — rebuild so results tie to a version')}`)
   if (golden) {
     const bad = r.correctness.mismatches.length + r.correctness.resultMismatches.length
     console.log(
@@ -270,6 +375,15 @@ function printReport() {
   )
   console.log(
     `friction: ${r.ux.undos} undo(s), ${r.ux.deadTaps} dead tap(s), backgrounded ${r.ux.timesBackgrounded} time(s)`
+  )
+  const rec = r.recovery
+  console.log(
+    `recovery: ${rec.guidePrompts} prompt(s) -> ${rec.undosPrompted} prompted undo(s), ${rec.undosSpontaneous} spontaneous; ` +
+    (rec.undoVerified === r.ux.undos && r.ux.undos > 0
+      ? C.green(`all ${rec.undoVerified} undo(s) left correct state`)
+      : rec.undoAnomalies.length
+        ? C.red(`${rec.undoAnomalies.length} undo(s) left UNEXPECTED state`)
+        : `${rec.undoVerified} verified`)
   )
   writeFileSync(OUT.replace(/\.ndjson$/, '-report.json'), JSON.stringify(r, null, 2))
   console.log(C.dim(`report written to ${OUT.replace(/\.ndjson$/, '-report.json')}`))

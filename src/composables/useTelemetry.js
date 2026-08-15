@@ -18,6 +18,10 @@
  * costs you the latency, not the session.
  */
 
+// Injected by vite at build time; falls back when running under vitest, where
+// there is no define pass.
+const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
+
 const COLLECTOR_KEY = 'bunco-telemetry-collector'
 const QUEUE_KEY = 'bunco-telemetry-queue'
 const FLUSH_MS = 600
@@ -100,7 +104,7 @@ export function createTelemetry(snapshot) {
       const res = await fetch(`${collector}/events`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sid, events: batch }),
+        body: JSON.stringify({ sid, build: BUILD_ID, events: batch }),
         keepalive: true,
       })
       if (!res.ok) throw new Error(`collector responded ${res.status}`)
@@ -169,7 +173,7 @@ export function createTelemetry(snapshot) {
   if (typeof window !== 'undefined') {
     window.addEventListener('pagehide', () => {
       try {
-        const body = JSON.stringify({ sid, events: queue })
+        const body = JSON.stringify({ sid, build: BUILD_ID, events: queue })
         navigator.sendBeacon?.(`${collector}/events`, new Blob([body], { type: 'application/json' }))
       } catch {
         // Nothing further to try on the way out.
@@ -178,9 +182,10 @@ export function createTelemetry(snapshot) {
   }
 
   record('load', {
+    build: BUILD_ID,
     ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
     screen: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : '',
   })
 
-  return { enabled: true, sid, record, wrap, flush }
+  return { enabled: true, sid, build: BUILD_ID, record, wrap, flush }
 }
