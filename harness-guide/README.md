@@ -16,21 +16,25 @@ lived outside the repo.
 
 | file | role |
 |---|---|
-| `gen-rolllist.js` | reads `telemetry/golden-game.json`, emits `rolllist.html` — the step list the tester follows |
-| `listserve.js` | 4-line static server for that HTML on `:31411` |
-| `appserve.js` | serves the production `dist/` at its real base path `/tools/bunco/` on `:31410` |
+| `gen-rolllist.cjs` | reads `telemetry/golden-game.json`, emits `rolllist.html` — the step list the tester follows |
+| `listserve.cjs` | 4-line static server for that HTML on `:31411` |
+| `appserve.cjs` | serves the production `dist/` at its real base path `/tools/bunco/` on `:31410` |
 
 `rolllist.html` is **generated output**, not source — regenerate it:
 
 ```bash
-node gen-rolllist.js ../telemetry/golden-game.json rolllist.html
+node gen-rolllist.cjs ../telemetry/golden-game.json rolllist.html
 ```
 
 ## Known issues in the recovered code
 
-- **`listserve.js` has an absolute path baked in** to the now-deleted job directory
-  (`/home/xhiris/.claude/jobs/1feb7947/tmp/rolllist.html`). It will not run until that is changed to
-  a relative path. Left as recovered rather than silently patched, so the diff is honest.
+- **Fixed after recovery:** `listserve` had an absolute path baked in to the now-deleted job
+  directory. It now resolves `rolllist.html` next to the script (`ROLLLIST` env var overrides,
+  `PORT` too) and returns a 503 telling you what to run when the file has not been generated yet.
+- **Renamed `.js` → `.cjs`.** All three files use `require`, which worked in the job scratch dir
+  because it had no `package.json`. This repo declares `"type": "module"`, so as `.js` they threw
+  `ReferenceError: require is not defined in ES module scope` — the recovery was inert until this
+  was found. Renaming is the smaller change than rewriting three files to ESM.
 - The guide polls the collector's `GET /feed` every 700ms to locate itself in the golden run, and
   posts mode changes to `POST /guide`. Those endpoints live in the committed
   `scripts/telemetry-collector.js`, so that side is intact.
