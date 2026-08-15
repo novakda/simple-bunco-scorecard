@@ -54,6 +54,15 @@ export function useGameState() {
 
   const pointsToWin = computed(() => Math.max(0, 21 - roundPoints.value))
 
+  // How many rolls have been entered this round. A zero-point roll moves neither
+  // the score nor anything else on screen, so without this the most common tap
+  // in the game produces no visible change and you cannot tell it registered.
+  const rollsThisRound = computed(() =>
+    state.value.rolls.filter(
+      r => r.set === state.value.currentSet && r.round === state.value.currentRound
+    ).length
+  )
+
   const setRollHistory = computed(() =>
     state.value.rolls.filter(r => r.set === state.value.currentSet)
   )
@@ -203,6 +212,7 @@ export function useGameState() {
     targetNumber,
     roundPoints,
     pointsToWin,
+    rollsThisRound,
     setRollHistory,
     setResults,
     phase,

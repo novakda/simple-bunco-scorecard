@@ -12,6 +12,10 @@
       <span class="points-to-win" v-if="pointsToWin > 0"> · {{ pointsToWin }} to win</span>
       <span class="points-to-win" v-else> · Go!</span>
     </div>
+    <!-- Counts every roll, including the scoreless ones. This is the only thing
+         on screen that changes when you tap 0, so it is what tells you the tap
+         landed. -->
+    <div class="roll-count">{{ rollsThisRound }} {{ rollsThisRound === 1 ? 'roll' : 'rolls' }} this round</div>
   </div>
 </template>
 
@@ -22,6 +26,7 @@ defineProps({
   targetNumber: Number,
   roundPoints: Number,
   pointsToWin: Number,
+  rollsThisRound: Number,
 })
 </script>
 
@@ -76,5 +81,13 @@ defineProps({
 .points-to-win {
   font-size: 20px;
   color: var(--text-mid);
+}
+
+.roll-count {
+  font-family: 'Inter', 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  color: var(--text-lo);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
 }
 </style>
