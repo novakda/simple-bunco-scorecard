@@ -180,6 +180,23 @@ onMounted(() => {
 <style>
 @import './assets/tokens.css';
 
+/* iOS treats a quick second tap on an element as double-tap-to-zoom and swallows
+   the tap. Every control here is tapped in fast succession during a round, so
+   the gesture costs real inputs — and a lost tap is invisible, because a
+   zero-point roll does not move the score either. A live session on 2026-08-14
+   desynced from the golden game at roll 43 for exactly this reason.
+
+   `manipulation` disables the double-tap-zoom gesture on these elements ONLY.
+   Pinch-zoom still works across the page, so this does not take away the
+   resize affordance the way `user-scalable=no` on the viewport would (WCAG
+   1.4.4). Applied to `button` rather than to each class so controls added
+   later inherit it. */
+button,
+.bunco-celebration,
+.hint-bar {
+  touch-action: manipulation;
+}
+
 .app-layout {
   display: flex;
   flex-direction: column;
