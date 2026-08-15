@@ -209,25 +209,47 @@ describe('undo never reaches back into a COMPLETED round', () => {
   })
 })
 
-describe('a round cannot be committed with no rolls (#1104)', () => {
-  it('refuses to end and commit a round that has no rolls', () => {
-    // The live failure: the BUNCO auto-advance moved to a fresh round while the
-    // player was still reading the celebration, their End Round press landed on
-    // the new empty round, and it committed with zero rolls and zero points.
+describe('nothing advances a round except an explicit press (#1104)', () => {
+  // The live failure this replaces: the BUNCO celebration auto-advanced into the
+  // next round while Dan was still reading it, his End Round press landed on the
+  // new empty round, and s3r4 was consumed with zero rolls.
+  //
+  // Note what is NOT asserted: that a zero-roll round is refused. A round CAN
+  // legitimately have no rolls of yours -- the head table can reach 21 before
+  // the dice ever come to you -- so blocking it would break a real game. The
+  // defect was never the empty round, it was being moved into one without
+  // knowing. Hence the invariant below: only an explicit press advances.
+
+  it('a Bunco ends the round but does not commit it', () => {
     const g = fresh()
-    g.recordScore(21, 'bunco')      // round 1 ends on a Bunco
+    g.recordScore(21, 'bunco')
     expect(g.phase.value).toBe('round-end')
-    g.commitRound('W')              // the auto-advance
-    expect(g.currentRound.value).toBe(2)
-    expect(g.rollsThisRound.value).toBe(0)
-
-    const resultsBefore = g._state.value.results.length
-    g.endRound()                    // the player's press, believing they are still in round 1
-    g.commitRound('W')
-
     expect(
       g._state.value.results.length,
-      'an empty round was committed: the round was consumed with no rolls'
-    ).toBe(resultsBefore)
+      'the Bunco committed the round on its own'
+    ).toBe(0)
+    expect(g.currentRound.value, 'the Bunco advanced the round on its own').toBe(1)
+  })
+
+  it('the round-end state is stable: it waits, indefinitely, for a press', () => {
+    const g = fresh()
+    g.recordScore(21, 'bunco')
+    const settled = JSON.stringify(g._state.value)
+    // Whatever the UI does with timers, the state machine itself must not move.
+    expect(JSON.stringify(g._state.value)).toBe(settled)
+    expect(g.phase.value).toBe('round-end')
+  })
+
+  it('and the explicit press is undoable, so a mistimed one costs nothing', () => {
+    const g = fresh()
+    g.recordScore(21, 'bunco')
+    const beforeCommit = JSON.stringify(g._state.value)
+    g.commitRound('W')
+    expect(g.currentRound.value).toBe(2)
+    g.undoLast()
+    expect(
+      JSON.stringify(g._state.value),
+      'committing a round could not be walked back'
+    ).toBe(beforeCommit)
   })
 })

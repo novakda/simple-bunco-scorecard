@@ -68,19 +68,45 @@ describe('the round-end screen must show what you scored', () => {
   })
 })
 
-describe('the BUNCO screen must stay long enough to undo a mis-tap', () => {
-  it('gives at least five seconds before auto-advancing', () => {
-    const m = appSrc.match(/const BUNCO_AUTO_MS\s*=\s*(\d+)/)
-    expect(m, 'BUNCO_AUTO_MS must be a named constant').toBeTruthy()
-    expect(Number(m[1])).toBeGreaterThanOrEqual(5000)
+/**
+ * SUPERSEDED 2026-08-15. This block used to require the BUNCO auto-advance to
+ * exist and to last at least five seconds -- the fix for #1054, which was a real
+ * improvement on the original two.
+ *
+ * Live play then showed the timer was the wrong shape of fix. A longer window
+ * makes it MORE likely the auto-advance fires while the player is still acting
+ * on the celebration, so the app moves into the next round underneath them and
+ * their next press lands somewhere they did not expect. That is #1104: a whole
+ * round committed empty, unrecoverably.
+ *
+ * The auto-advance is now gone rather than retuned. A Bunco ends the round and
+ * the round-end screen appears; nothing moves until the player presses. The
+ * tests below assert the new contract, and deliberately assert the ABSENCE of
+ * the timer, because a reintroduced one would bring #1104 back with it.
+ */
+describe('nothing advances the game on a timer', () => {
+  it('has no BUNCO auto-advance timer at all', () => {
+    expect(appSrc).not.toMatch(/BUNCO_AUTO_MS/)
+    expect(appSrc, 'a timer must never commit a round').not.toMatch(
+      /setTimeout\([^)]*commitRound/
+    )
   })
 
-  it('shows the countdown rather than running it silently', () => {
-    expect(appSrc).toMatch(/bunco-countdown/)
-    expect(appSrc).toMatch(/buncoProgress/)
+  it('celebrates a Bunco on the same round-end screen, not a separate one', () => {
+    // One screen, one way forward. Two screens with two ways forward is what
+    // made "End Round" and "a Bunco ends the round" mean different things.
+    expect(appSrc).toMatch(/isBuncoRound/)
+    expect(appSrc).toMatch(/bunco-banner/)
+    expect(appSrc, 'the celebration must not be its own overlay again').not.toMatch(
+      /v-if="isBuncoPhase"/
+    )
   })
 
-  it('still auto-advances, so the screen is not a dead end', () => {
-    expect(appSrc).toMatch(/setTimeout\(\(\) => commitRound\('W'\), BUNCO_AUTO_MS\)/)
+  it('leaves the explicit W/L/T press as the only way out of round-end', () => {
+    const roundEnd = appSrc.slice(appSrc.indexOf('isRoundEndPhase'), appSrc.indexOf('Set End'))
+    expect(roundEnd).toMatch(/commitRound\('W'\)/)
+    expect(roundEnd).toMatch(/commitRound\('L'\)/)
+    expect(roundEnd).toMatch(/commitRound\('T'\)/)
+    expect(roundEnd, 'undo must be reachable from the round-end screen').toMatch(/undoLast/)
   })
 })

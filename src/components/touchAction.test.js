@@ -18,9 +18,11 @@ describe('double-tap zoom must not be able to swallow taps', () => {
   })
 
   it('covers the tap targets that are not buttons', () => {
-    // The BUNCO celebration and the first-run hint bar are divs with @click,
-    // so a rule scoped to `button` alone would leave them exposed.
-    expect(appSrc).toMatch(/\.bunco-celebration[^{]*\{[^}]*touch-action:\s*manipulation/s)
+    // The full-screen overlays and the first-run hint bar are divs, so a rule
+    // scoped to `button` alone would leave them exposed. (This asserted
+    // .bunco-celebration until 2026-08-15; that element is gone -- the Bunco is
+    // now a banner on .overlay-screen rather than an overlay of its own.)
+    expect(appSrc).toMatch(/\.overlay-screen[^{]*\{[^}]*touch-action:\s*manipulation/s)
     expect(appSrc).toMatch(/\.hint-bar[^{]*\{[^}]*touch-action:\s*manipulation/s)
   })
 
