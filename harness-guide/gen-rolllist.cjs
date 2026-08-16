@@ -129,6 +129,24 @@ var synced = true, lastSig = '', seenBad = 0;
 // prompted undo can be told from a spontaneous one when the numbers are read.
 var strict = localStorage.getItem('bunco-guide-strict') !== '0';
 var promptedFor = null;
+// One poll at a time. poll() is async and was scheduled on a bare 700ms
+// interval, so a slow fetch let two runs overlap and an out-of-order response
+// could stomp lastSig and pos -- which would present as the guide jumping
+// backwards, the exact symptom this sync exists to eliminate.
+var polling = false;
+// Which mismatch is OUTSTANDING right now, tracked by delta rather than by
+// comparing index to totalRolls. The collector's mismatch list is append-only
+// and never shrinks on an undo, so index === totalRolls goes true AGAIN after
+// undoing and correctly re-tapping the same roll -- the guide would then call
+// a good tap wrong.
+var liveBad = null, liveAtRolls = -1;
+// Collector strings are interpolated into innerHTML. They are plain text today;
+// escaping them means a stray < or & can never become markup.
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
 function setStrict(v){
   strict = v; localStorage.setItem('bunco-guide-strict', v ? '1' : '0');
   fetch(GUIDE,{method:'POST',headers:{'content-type':'application/json'},
@@ -142,10 +160,19 @@ function locate(taps, results){
   return null;
 }
 async function poll(){
+  if (polling) return;
+  polling = true;
   try {
     var r = await fetch(FEED, {cache:'no-store'});
     var f = await r.json();
     var bad = (f.mismatches||[]).length;
+
+    // A mismatch becomes LIVE when it first appears, and stops being live the
+    // moment the recorded roll count moves -- an undo removed it, or a further
+    // tap moved past it. Keyed off deltas, so a re-tap of a previously bad roll
+    // index cannot resurrect the old warning.
+    if (bad > seenBad) { liveBad = f.mismatches[bad-1]; liveAtRolls = f.totalRolls; }
+    else if (f.totalRolls !== liveAtRolls) { liveBad = null; }
     document.getElementById('live').innerHTML =
       '<span class="pill '+(synced?'on':'man')+'">'+(synced?'SYNCED to app':'manual')+'</span>'
       + '<span>'+f.matches+' / '+f.taps+' taps matched</span>'
@@ -153,22 +180,22 @@ async function poll(){
       + '<span class="pill '+(strict?'man':'on')+'" id="modepill" title="click to switch">'+(strict?'STRICT — prompts undo':'OBSERVE — flags only')+'</span>'
       + (f.undos ? '<span>'+f.undos+' undo'+(f.undosPrompted?' ('+f.undosPrompted+' prompted)':'')+(f.undoVerified===f.undos?' ✓ verified':'')+'</span>' : '')
       + (f.deadTaps ? '<span class="pill off">'+f.deadTaps+' dead tap</span>' : '')
-      + (bad ? (f.mismatches[bad-1].index === f.totalRolls
-          ? '<div class="bad">Last wrong tap: '+ (f.mismatches[bad-1].detail||'') +'</div>'
+      + (bad ? (liveBad
+          ? '<div class="bad">Last wrong tap: '+ esc(liveBad.detail) +'</div>'
           : '<div class="bad hist">'+bad+' wrong tap'+(bad>1?'s':'')+' earlier this session &mdash; nothing outstanding where you are now</div>') : '');
     if (bad > seenBad) { seenBad = bad; try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA=').play() } catch(e){} }
-    // Undo detection: if the most recent mismatch is the tap the app just took,
-    // that tap is recoverable right now. Flag it; do not command it — a guide that
-    // tells you to undo contaminates the undo-rate metric the session is measuring.
-    var lastBad = bad ? f.mismatches[bad-1] : null;
-    var undoable = lastBad && lastBad.index === f.totalRolls;
+    // Undo detection: a mismatch that is still OUTSTANDING is recoverable right
+    // now. Flag it; do not command it — a guide that tells you to undo
+    // contaminates the undo-rate metric the session is measuring.
+    var lastBad = liveBad;
+    var undoable = !!liveBad;
     var ub = document.getElementById('undobox');
     if (undoable) {
       ub.style.display = '';
       ub.innerHTML = (strict
           ? '<b style="font-size:1.15rem">↩︎ UNDO on the phone</b><br>'
           : '<b>That last tap did not match.</b><br>')
-        + (lastBad.detail||'')
+        + esc(lastBad.detail)
         + '<br><span style="color:#a3a3a3">'
         + (strict
             ? 'Undo, then re-tap it — the run stays aligned and nothing is lost. The wrong tap, this prompt and your undo are all kept in the log.'
@@ -200,6 +227,8 @@ async function poll(){
     }
   } catch(e) {
     document.getElementById('live').innerHTML = '<span class="pill off">collector unreachable</span>';
+  } finally {
+    polling = false;
   }
 }
 setInterval(poll, 700); poll();
