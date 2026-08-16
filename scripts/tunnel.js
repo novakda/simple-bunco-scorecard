@@ -45,7 +45,15 @@ function parseArgs(argv) {
     const val = argv[++i]
     if (val === undefined || val.startsWith('--')) fail(`--${key} needs a value`)
     out[key] = key.endsWith('port') ? Number(val) : val
-    if (key.endsWith('port') && !Number.isInteger(out[key])) fail(`--${key} must be a port number, got "${val}"`)
+    if (key.endsWith('port')) {
+      const p = out[key]
+      // Range-checked, not merely integer-checked: 0, negatives and anything
+      // above 65535 are not ports, and letting them through defers the failure
+      // to a connect error that names something else.
+      if (!Number.isInteger(p) || p < 1 || p > 65535) {
+        fail(`--${key} must be a port between 1 and 65535, got "${val}"`)
+      }
+    }
   }
   return out
 }
@@ -93,7 +101,15 @@ function startTunnel(label, port) {
     })
     let settled = false
     const timer = setTimeout(() => {
-      if (!settled) { settled = true; reject(new Error(`${label}: no URL from cloudflared after 45s`)) }
+      if (!settled) {
+        settled = true
+        // Kill the child before rejecting. It is not in `children` yet — that
+        // only happens once startTunnel resolves — so shutdown() cannot reach
+        // it, and a timed-out run would otherwise leave a live tunnel process
+        // behind holding a public hostname nobody is watching.
+        try { proc.kill() } catch { /* already gone */ }
+        reject(new Error(`${label}: no URL from cloudflared after 45s`))
+      }
     }, 45000)
 
     const scan = (buf) => {
@@ -118,12 +134,18 @@ function startTunnel(label, port) {
 const args = parseArgs(process.argv.slice(2))
 const children = []
 
-function shutdown() {
+/**
+ * @param {number} code exit status. Ctrl-C is a success (0); the error path
+ *   must NOT be, or `npm run tunnel` reports success to its caller after
+ *   failing to open a tunnel — the same silent-success shape this tool's
+ *   preflight exists to prevent.
+ */
+function shutdown(code = 0) {
   for (const c of children) { try { c.kill() } catch { /* already gone */ } }
-  process.exit(0)
+  process.exit(code)
 }
-process.on('SIGINT', shutdown)
-process.on('SIGTERM', shutdown)
+process.on('SIGINT', () => shutdown(0))
+process.on('SIGTERM', () => shutdown(0))
 
 const appStatus = await probe(args['app-port'], args.base)
 if (appStatus === null) {
@@ -168,5 +190,5 @@ try {
   console.log('  Ctrl-C closes both tunnels. The URLs change every run; quick tunnels are ephemeral.\n')
 } catch (e) {
   console.error(`\x1b[31mtunnel: ${e.message}\x1b[0m`)
-  shutdown()
+  shutdown(1)
 }
