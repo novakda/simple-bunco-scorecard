@@ -119,7 +119,7 @@ import { useGameState, TOTAL_SETS } from './composables/useGameState.js'
 
 const {
   currentSet, currentRound, targetNumber, roundPoints, pointsToWin, rollsThisRound,
-  setRollHistory, setResults, phase, lastRoll,
+  setRollHistory, setResults, phase, lastRoll, lastRollThisRound,
   recordScore, endRound, commitRound, nextSet, undoLast, newGame,
   _state,
 } = useGameState()
@@ -149,8 +149,13 @@ function handleNewGame() {
 // presses to advance. The Bunco gets its celebration — it just has to be
 // dismissed rather than dismissing itself. One consistent move, no race.
 const isRoundEndPhase = computed(() => phase.value === 'round-end')
+// Scoped to THIS round, not the globally last roll. With lastRoll, ending a
+// round that has no rolls of its own showed the celebration for a Bunco scored
+// in the PREVIOUS round — the same unscoped-lookup mistake as #1106, made one
+// layer up while fixing #1106. The state-machine fuzzer could not see it,
+// because it never rendered anything.
 const isBuncoRound = computed(
-  () => phase.value === 'round-end' && lastRoll.value?.type === 'bunco'
+  () => phase.value === 'round-end' && lastRollThisRound.value?.type === 'bunco'
 )
 
 watch(isBuncoRound, (val) => {

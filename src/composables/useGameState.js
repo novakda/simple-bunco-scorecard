@@ -35,7 +35,14 @@ export function useGameState() {
   // A schema-1 game saved before undo-as-history has no stack. It resumes with
   // an empty one: steps taken before this upgrade are not undoable, but the
   // game itself is intact and every step from here on is.
-  if (!Array.isArray(state.value?.history)) state.value.history = []
+  //
+  // The version is bumped WITH the migration, not left behind. A normalized
+  // state still labelled v1 is worse than either honest value, because the next
+  // migration cannot tell what it is actually looking at.
+  if (!Array.isArray(state.value?.history)) {
+    state.value.history = []
+    state.value.schemaVersion = 2
+  }
 
   // useWakeLock() only wires up listeners — nothing holds the screen awake until
   // request() is called. Without this the phone sleeps between rolls mid-game.
@@ -80,9 +87,30 @@ export function useGameState() {
     state.value.results.filter(r => r.set === state.value.currentSet)
   )
 
+  // The globally last roll, whichever round it belongs to. Correct for
+  // telemetry, which reports the roll the app just stored.
   const lastRoll = computed(() => {
     const rolls = state.value.rolls
     return rolls.length > 0 ? rolls[rolls.length - 1] : null
+  })
+
+  /**
+   * The last roll OF THE ROUND YOU ARE IN, or null if this round has none yet.
+   *
+   * Anything asking "how did THIS round go" must use this and not lastRoll. A
+   * freshly committed round has no rolls of its own, so lastRoll there still
+   * belongs to the PREVIOUS round. That is exactly the trap that produced
+   * #1106 in undoLast — where it deleted a completed round's Bunco — and it
+   * caught the round-end screen too, which showed the celebration banner for a
+   * Bunco scored in the round before.
+   */
+  const lastRollThisRound = computed(() => {
+    const rolls = state.value.rolls
+    for (let i = rolls.length - 1; i >= 0; i--) {
+      const r = rolls[i]
+      if (r.set === state.value.currentSet && r.round === state.value.currentRound) return r
+    }
+    return null
   })
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -254,6 +282,7 @@ export function useGameState() {
     setResults,
     phase,
     lastRoll,
+    lastRollThisRound,
     ...actions,
     telemetry,
     _state: state,

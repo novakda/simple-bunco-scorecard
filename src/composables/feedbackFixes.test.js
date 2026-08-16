@@ -102,6 +102,19 @@ describe('nothing advances the game on a timer', () => {
     )
   })
 
+  it('derives the celebration from THIS round, not the globally last roll', () => {
+    // Source-level guard because the bug is in a computed in App.vue, and the
+    // composable-level fuzzer cannot reach it. lastRoll is still imported and
+    // still correct for telemetry; what must not come back is isBuncoRound
+    // being derived from it.
+    const decl = appSrc.slice(appSrc.indexOf('const isBuncoRound'))
+    const body = decl.slice(0, decl.indexOf(')\n'))
+    expect(body).toMatch(/lastRollThisRound/)
+    expect(body, 'isBuncoRound must not read the unscoped lastRoll').not.toMatch(
+      /lastRoll\.value/
+    )
+  })
+
   it('leaves the explicit W/L/T press as the only way out of round-end', () => {
     const roundEnd = appSrc.slice(appSrc.indexOf('isRoundEndPhase'), appSrc.indexOf('Set End'))
     expect(roundEnd).toMatch(/commitRound\('W'\)/)

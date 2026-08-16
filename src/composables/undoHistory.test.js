@@ -10,18 +10,19 @@
  *     for every reachable state s and every action a that CHANGES s,
  *         undoLast(a(s)) === s
  *
- * Which is worth stating precisely, because the current undoLast() is not a
- * history mechanism at all. It is four hand-written special cases keyed on
- * phase, and whole transitions have no undo branch anywhere. The point of a
- * property test here is that it does not need to be told which transitions
- * those are -- it walks the machine and finds them.
+ * Worth stating precisely, because undoLast() USED to be four hand-written
+ * special cases keyed on phase, with whole transitions having no undo branch
+ * anywhere. The point of a property test is that it does not need to be told
+ * which transitions those are -- it walks the machine and finds them.
+ *
+ * When first written these failed, and that was the point: they were the
+ * executable statement of #1104, #1105 and #1106. They pass now because
+ * undoLast() is a history stack, and they stay to keep it one. What they
+ * describe is the SPEC, not a list of known bugs.
  *
  * Actions that are legitimately no-ops (guarded, e.g. commitRound while
  * playing) are excluded: if the action did not change the state, there is
  * nothing for undo to step back over. Only real steps are held to the property.
- *
- * These tests are written to FAIL against the current implementation. They are
- * the executable statement of #1104 and #1105.
  */
 import { describe, it, expect, vi } from 'vitest'
 
@@ -206,6 +207,61 @@ describe('undo never reaches back into a COMPLETED round', () => {
       round1After,
       'undo silently deleted a Bunco from a round that was already committed'
     ).toBe(22)
+  })
+})
+
+describe('"this round" lookups are scoped to this round', () => {
+  // The same unscoped-lookup mistake as #1106, found by review one layer up:
+  // the round-end screen derived its Bunco celebration from lastRoll, the
+  // GLOBAL last roll. In a round with no rolls of its own that still belongs to
+  // the previous round, so ending an empty round after a Bunco threw the
+  // celebration again for a Bunco already scored and committed.
+  //
+  // The state-machine fuzzer could not catch this: it never renders anything.
+  // The lesson is that a property test bounds the layer it walks, and not one
+  // layer more.
+  it('lastRollThisRound is null in a round that has no rolls yet', () => {
+    const g = fresh()
+    g.recordScore(21, 'bunco')
+    expect(g.lastRollThisRound.value?.type).toBe('bunco')
+
+    g.commitRound('W')
+    expect(g.currentRound.value).toBe(2)
+    expect(g.rollsThisRound.value).toBe(0)
+
+    expect(
+      g.lastRoll.value?.type,
+      'lastRoll is global by design — telemetry reports the roll just stored'
+    ).toBe('bunco')
+    expect(
+      g.lastRollThisRound.value,
+      'the new round has no rolls, so it has no last roll'
+    ).toBeNull()
+  })
+
+  it('does not report a previous round\'s Bunco as this round\'s', () => {
+    const g = fresh()
+    g.recordScore(21, 'bunco')
+    g.commitRound('W')
+    g.endRound() // end round 2, which has no rolls at all
+
+    expect(g.phase.value).toBe('round-end')
+    // This is the condition the round-end screen uses for its banner.
+    const looksLikeABunco = g.lastRollThisRound.value?.type === 'bunco'
+    expect(
+      looksLikeABunco,
+      'the celebration would fire for a Bunco scored in the previous round'
+    ).toBe(false)
+  })
+
+  it('still reports a Bunco rolled in the current round', () => {
+    const g = fresh()
+    g.recordScore(1, 'normal')
+    g.commitRound // not called; just guarding against a copy-paste no-op below
+    g.endRound()
+    g.commitRound('W')
+    g.recordScore(21, 'bunco') // round 2's own Bunco
+    expect(g.lastRollThisRound.value?.type).toBe('bunco')
   })
 })
 
