@@ -2,16 +2,22 @@ const { readFileSync, writeFileSync } = require('node:fs')
 const g = JSON.parse(readFileSync(process.argv[2], 'utf8'))
 
 const steps = []
+let tapsBefore = 0, resultsBefore = 0
 for (const r of g.rounds) {
-  steps.push({ kind: 'round', set: r.set, round: r.round, target: r.target,
+  steps.push({ kind: 'round', set: r.set, round: r.round, target: r.target, tapsBefore, resultsBefore,
                taps: r.myRolls.length, pts: r.expectedRoundPoints, cut: r.cutShort })
+  let running = 0
   r.myRolls.forEach((x, i) => {
-    steps.push({ kind: 'tap', set: r.set, round: r.round, target: r.target,
-                 n: i + 1, of: r.myRolls.length, dice: x.dice, press: x.tap, points: x.points, type: x.type })
+    running += x.points
+    steps.push({ kind: 'tap', set: r.set, round: r.round, target: r.target, tapsBefore, resultsBefore,
+                 n: i + 1, of: r.myRolls.length, dice: x.dice, press: x.tap, points: x.points, type: x.type,
+                 running, finalPts: r.expectedRoundPoints })
+    tapsBefore++
   })
-  steps.push({ kind: 'end', set: r.set, round: r.round, pts: r.expectedRoundPoints,
+  steps.push({ kind: 'end', set: r.set, round: r.round, pts: r.expectedRoundPoints, tapsBefore, resultsBefore,
                result: r.expectedResult, endsOnBunco: r.endsOnBunco })
-  if (r.round === 6) steps.push({ kind: 'set', set: r.set })
+  resultsBefore++
+  if (r.round === 6) steps.push({ kind: 'set', set: r.set, tapsBefore, resultsBefore })
 }
 
 const html = `<!doctype html><html><head><meta charset=utf-8>
@@ -32,7 +38,9 @@ main{max-width:56rem;margin:0 auto;padding:1rem 1.1rem 6rem}
 .row:hover{background:#161616}
 .row .idx{color:var(--lo);font:600 .8rem ui-monospace,monospace}
 .row .dice{font:1.05rem ui-monospace,monospace;color:var(--mid)}
-.row .btn{font:800 1.05rem system-ui;color:var(--ac)}
+.row .btn{font:800 1.05rem system-ui;color:var(--ac);display:flex;align-items:baseline;gap:.7rem;justify-content:flex-end}
+.row .run{font:600 .85rem ui-monospace,monospace;color:var(--mid);min-width:2.2rem;text-align:right}
+.row.done .run{color:var(--ok)}
 .row.done{opacity:.32}
 .row.done .btn{color:var(--ok)}
 .row.now{background:#2a1f05;box-shadow:inset 3px 0 0 var(--ac)}
@@ -45,6 +53,14 @@ main{max-width:56rem;margin:0 auto;padding:1rem 1.1rem 6rem}
 .setbrk{margin:2rem 0;padding:.9rem;text-align:center;background:#241a02;border:1px solid var(--ac);border-radius:10px;color:var(--ac);font-weight:700}
 .tag{font:700 .62rem system-ui;letter-spacing:.08em;text-transform:uppercase;padding:.12rem .4rem;border-radius:4px;background:#3a2a00;color:var(--ac);margin-left:.5rem}
 kbd{font:.75rem ui-monospace,monospace;border:1px solid #333;border-bottom-width:2px;border-radius:4px;padding:.05rem .3rem;color:var(--mid)}
+.live{margin-top:.6rem;font-size:.85rem;display:flex;gap:1rem;flex-wrap:wrap;align-items:center}
+.pill{padding:.15rem .55rem;border-radius:999px;font-weight:700;font-size:.78rem}
+.pill.on{background:#0d2a17;color:var(--ok);border:1px solid #1f5c37}
+.pill.off{background:#2a1010;color:#ef4444;border:1px solid #5c1f1f}
+.pill.man{background:#2a2200;color:var(--ac);border:1px solid #5c4a1f}
+.bad.hist{background:#1a1a1a;border-color:#333;color:var(--mid)}
+.undobox{margin-top:.6rem;padding:.7rem .8rem;border-radius:8px;background:#3a1a00;border:1px solid var(--ac);color:#ffd591;font-size:.9rem}
+.bad{background:#2a1010;border:1px solid #5c1f1f;color:#ffb4b4;padding:.5rem .7rem;border-radius:8px;margin-top:.5rem;font-size:.85rem}
 </style></head><body>
 <header>
   <div class="cur">
@@ -59,6 +75,8 @@ kbd{font:.75rem ui-monospace,monospace;border:1px solid #333;border-bottom-width
     </div>
   </div>
   <div class="bar"><i id="fill"></i></div>
+  <div id="live" class="live"></div>
+  <div id="undobox" class="undobox" style="display:none"></div>
 </header>
 <main id="list"></main>
 <script>
@@ -71,7 +89,7 @@ const list = document.getElementById('list');
 let html = '';
 STEPS.forEach((s,i)=>{
   if (s.kind==='round') html += '<div class="hdr"><div class="t">Set '+s.set+' &middot; Round '+s.round+' &mdash; target <span>'+s.target+'</span></div><div class="s">'+s.taps+' taps &rarr; '+s.pts+' pts'+(s.cut?' &middot; head table cuts it short':'')+'</div></div>';
-  else if (s.kind==='tap') html += '<div class="row" data-i="'+i+'"><div class="idx">'+s.n+'/'+s.of+'</div><div class="dice">'+s.dice.join('  ')+'</div><div class="btn">'+s.press+(s.type==='bunco'?'<span class="tag">round ends</span>':'')+'</div></div>';
+  else if (s.kind==='tap') html += '<div class="row" data-i="'+i+'"><div class="idx">'+s.n+'/'+s.of+'</div><div class="dice">'+s.dice.join('  ')+'</div><div class="btn">'+s.press+(s.type==='bunco'?'<span class="tag">round ends</span>':'')+'<span class="run">'+s.running+'</span></div></div>';
   else if (s.kind==='end') html += '<div class="fin" data-i="'+i+'">'+(s.endsOnBunco?'Bunco already ended the round. ':'Tap <b>End Round</b>. ')+'Round total should read <b>'+s.pts+'</b>. Then pick <b>'+({W:'WIN',L:'LOSS',T:'TIE'})[s.result]+'</b>.</div>';
   else html += '<div class="setbrk" data-i="'+i+'">End of set '+s.set+' &mdash; tap through the set summary</div>';
 });
@@ -91,7 +109,7 @@ function render(){
   if(!s){ press.textContent='✓'; press.className='press'; ctx.textContent='Game complete'; dice.textContent=''; }
   else if(s.kind==='tap'){ press.textContent=s.press; press.className='press'+(s.press.length>2?' sm':'');
     ctx.innerHTML='Set '+s.set+' &middot; Round '+s.round+' &middot; target <b>'+s.target+'</b> &middot; tap '+s.n+' of '+s.of;
-    dice.textContent='dice '+s.dice.join('  ')+'  →  '+s.points+' pt'; }
+    dice.innerHTML='dice '+s.dice.join('  ')+'  →  '+s.points+' pt  &middot;  round should read <b>'+s.running+'</b>'+(s.running===s.finalPts?' (final)':' of '+s.finalPts); }
   else if(s.kind==='end'){ press.textContent=({W:'WIN',L:'LOSS',T:'TIE'})[s.result]; press.className='press sm';
     ctx.innerHTML='Set '+s.set+' &middot; Round '+s.round+' &mdash; End Round, total <b>'+s.pts+'</b>'; dice.textContent=''; }
   else if(s.kind==='round'){ press.textContent=s.target; press.className='press';
@@ -100,12 +118,132 @@ function render(){
   localStorage.setItem(KEY,pos);
   const cur=document.querySelector('.now'); if(cur) cur.scrollIntoView({block:'center',behavior:'smooth'});
 }
+// ---- live sync with the collector -------------------------------------
+// The guide follows the app's own roll count instead of the player keeping two
+// surfaces in step by hand. Manual keys still work and switch sync off.
+var FEED = 'http://127.0.0.1:31403/feed';
+var GUIDE = 'http://127.0.0.1:31403/guide';
+var synced = true, lastSig = '', seenBad = 0;
+// STRICT prompts the undo so a misclick does not cost the whole run; OBSERVE only
+// flags it. Both keep the full history — the prompt itself is logged, so a
+// prompted undo can be told from a spontaneous one when the numbers are read.
+var strict = localStorage.getItem('bunco-guide-strict') !== '0';
+var promptedFor = null;
+// One poll at a time. poll() is async and was scheduled on a bare 700ms
+// interval, so a slow fetch let two runs overlap and an out-of-order response
+// could stomp lastSig and pos -- which would present as the guide jumping
+// backwards, the exact symptom this sync exists to eliminate.
+var polling = false;
+// Which mismatch is OUTSTANDING right now, tracked by delta rather than by
+// comparing index to totalRolls. The collector's mismatch list is append-only
+// and never shrinks on an undo, so index === totalRolls goes true AGAIN after
+// undoing and correctly re-tapping the same roll -- the guide would then call
+// a good tap wrong.
+var liveBad = null, liveAtRolls = -1;
+// Collector strings are interpolated into innerHTML. They are plain text today;
+// escaping them means a stray < or & can never become markup.
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function setStrict(v){
+  strict = v; localStorage.setItem('bunco-guide-strict', v ? '1' : '0');
+  fetch(GUIDE,{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({kind:'mode', strict: v})}).catch(function(){});
+}
+function locate(taps, results){
+  for (var i=0;i<STEPS.length;i++){
+    var s0=STEPS[i];
+    if (s0.tapsBefore===taps && s0.resultsBefore===results && (s0.kind==='tap'||s0.kind==='end')) return i;
+  }
+  return null;
+}
+async function poll(){
+  if (polling) return;
+  polling = true;
+  try {
+    var r = await fetch(FEED, {cache:'no-store'});
+    var f = await r.json();
+    var bad = (f.mismatches||[]).length;
+
+    // A mismatch becomes LIVE when it first appears, and stops being live the
+    // moment the recorded roll count moves -- an undo removed it, or a further
+    // tap moved past it. Keyed off deltas, so a re-tap of a previously bad roll
+    // index cannot resurrect the old warning.
+    if (bad > seenBad) { liveBad = f.mismatches[bad-1]; liveAtRolls = f.totalRolls; }
+    else if (f.totalRolls !== liveAtRolls) { liveBad = null; }
+    document.getElementById('live').innerHTML =
+      '<span class="pill '+(synced?'on':'man')+'">'+(synced?'SYNCED to app':'manual')+'</span>'
+      + '<span>'+f.matches+' / '+f.taps+' taps matched</span>'
+      + (bad ? '<span class="pill off">'+bad+' wrong</span>' : '<span class="pill on">no wrong taps</span>')
+      + '<span class="pill '+(strict?'man':'on')+'" id="modepill" title="click to switch">'+(strict?'STRICT — prompts undo':'OBSERVE — flags only')+'</span>'
+      + (f.undos ? '<span>'+f.undos+' undo'+(f.undosPrompted?' ('+f.undosPrompted+' prompted)':'')+(f.undoVerified===f.undos?' ✓ verified':'')+'</span>' : '')
+      + (f.deadTaps ? '<span class="pill off">'+f.deadTaps+' dead tap</span>' : '')
+      + (bad ? (liveBad
+          ? '<div class="bad">Last wrong tap: '+ esc(liveBad.detail) +'</div>'
+          : '<div class="bad hist">'+bad+' wrong tap'+(bad>1?'s':'')+' earlier this session &mdash; nothing outstanding where you are now</div>') : '');
+    if (bad > seenBad) { seenBad = bad; try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA=').play() } catch(e){} }
+    // Undo detection: a mismatch that is still OUTSTANDING is recoverable right
+    // now. Flag it; do not command it — a guide that tells you to undo
+    // contaminates the undo-rate metric the session is measuring.
+    var lastBad = liveBad;
+    var undoable = !!liveBad;
+    var ub = document.getElementById('undobox');
+    if (undoable) {
+      ub.style.display = '';
+      ub.innerHTML = (strict
+          ? '<b style="font-size:1.15rem">↩︎ UNDO on the phone</b><br>'
+          : '<b>That last tap did not match.</b><br>')
+        + esc(lastBad.detail)
+        + '<br><span style="color:#a3a3a3">'
+        + (strict
+            ? 'Undo, then re-tap it — the run stays aligned and nothing is lost. The wrong tap, this prompt and your undo are all kept in the log.'
+            : 'Recorded either way. Undo if you want the rest of the run to stay aligned.')
+        + '</span>';
+      // Tell the collector we prompted, once per offending roll, so a prompted
+      // undo is distinguishable from one the tester chose unaided.
+      if (strict && promptedFor !== lastBad.index) {
+        promptedFor = lastBad.index;
+        fetch(GUIDE,{method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({kind:'prompt', atRoll:lastBad.index, detail:lastBad.detail,
+                               expected:lastBad.expected, got:lastBad.got})}).catch(function(){});
+      }
+    } else { ub.style.display = 'none'; }
+
+    var sig = f.totalRolls + ':' + f.totalResults;
+    // AUTO-REARM. The app is the source of truth. Browsing with the keys
+    // between taps is fine, but the moment the app records one, follow it
+    // again. Previously a single keypress disabled the sync for the rest of
+    // the run: the player distrusts the guide, nudges it with space, and the
+    // nudge is what actually breaks it. Being stuck behind the app is the
+    // precise failure this sync exists to prevent, so it must not be reachable
+    // by accident.
+    if (sig !== lastSig && !synced) { synced = true; }
+    if (synced && sig !== lastSig) {
+      lastSig = sig;
+      var i = locate(f.totalRolls, f.totalResults);
+      if (i !== null && i !== pos) { pos = i; render(); }
+    }
+  } catch(e) {
+    document.getElementById('live').innerHTML = '<span class="pill off">collector unreachable</span>';
+  } finally {
+    polling = false;
+  }
+}
+setInterval(poll, 700); poll();
+
 document.addEventListener('keydown',e=>{
+  if(['ArrowRight','ArrowLeft',' ','Enter'].indexOf(e.key)>=0 && synced){ synced=false; }
   if(e.key===' '||e.key==='ArrowRight'||e.key==='Enter'){e.preventDefault(); if(pos<STEPS.length){pos++;render();}}
   else if(e.key==='ArrowLeft'){e.preventDefault(); if(pos>0){pos--;render();}}
   else if(e.key==='r'&&e.shiftKey){pos=0;render();}
 });
-list.addEventListener('click',e=>{const el=e.target.closest('[data-i]'); if(el){pos=+el.dataset.i; render();}});
+list.addEventListener('click',e=>{const el=e.target.closest('[data-i]'); if(el){synced=false; pos=+el.dataset.i; render();}});
+document.getElementById('live').addEventListener('click',e=>{
+  if(e.target.id==='modepill'){ setStrict(!strict); poll(); return; }
+  if(e.target.classList.contains('man')){ synced=true; lastSig=''; }
+});
 // skip the pure-marker steps forward automatically on load
 render();
 </script></body></html>`
