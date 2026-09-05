@@ -1,17 +1,16 @@
 <template>
   <!-- BUNCO! Celebration -->
-  <div v-if="isBuncoPhase" class="bunco-celebration" @click="commitRound('W')">
-    <div class="bunco-text">BUNCO!</div>
-    <div class="bunco-sub">Tap to continue</div>
-    <!-- Without this the largest possible scoring error (21 points) is the only
-         one that cannot be taken back. Tapping it also cancels the auto-advance,
-         because undoLast returns to 'playing' and the watcher clears the timer. -->
-    <button class="bunco-undo" @click.stop="undoLast">Not a Bunco? Undo</button>
-    <div class="bunco-countdown"><i :style="{ width: buncoProgress + '%' }"></i></div>
-  </div>
-
-  <!-- W/L/T Picker -->
-  <div v-else-if="isRoundEndPhase" class="overlay-screen">
+  <!-- ONE round-end screen, whatever ended the round.
+       A Bunco ends it by the rules; "End Round" ends it because the head table
+       called it. Those used to be two screens with two different ways forward,
+       and one of them moved on by itself. Now the Bunco just makes this screen
+       celebratory: same score, same buttons, same explicit press. Nothing
+       advances until the player says so. -->
+  <div v-if="isRoundEndPhase" class="overlay-screen" :class="{ 'is-bunco': isBuncoRound }">
+    <div v-if="isBuncoRound" class="bunco-banner">
+      <div class="bunco-text">BUNCO!</div>
+      <div class="bunco-sub">21 points</div>
+    </div>
     <div class="overlay-title">Round {{ currentRound }} complete</div>
     <!-- The score you just spent a round accumulating, shown at the moment you
          are asked to judge the round. Without it there is nothing to check your
@@ -120,7 +119,7 @@ import { useGameState, TOTAL_SETS } from './composables/useGameState.js'
 
 const {
   currentSet, currentRound, targetNumber, roundPoints, pointsToWin, rollsThisRound,
-  setRollHistory, setResults, phase, lastRoll,
+  setRollHistory, setResults, phase, lastRoll, lastRollThisRound,
   recordScore, endRound, commitRound, nextSet, undoLast, newGame,
   _state,
 } = useGameState()
@@ -137,36 +136,30 @@ function handleNewGame() {
   newGame()
 }
 
-const isBuncoPhase = computed(
-  () => phase.value === 'round-end' && lastRoll.value?.type === 'bunco'
-)
-const isRoundEndPhase = computed(
-  () => phase.value === 'round-end' && lastRoll.value?.type !== 'bunco'
+// NOTHING ADVANCES ON A TIMER ANY MORE.
+//
+// A Bunco ends the round by the rules; "End Round" ends it because the head
+// table called it. Those were two different code paths landing in two different
+// places, and the whole family of round defects lived in that gap: the timer
+// advanced into the next round while the player was still reading the
+// celebration, so their next press landed on a round they did not know they
+// were in, and committed it empty.
+//
+// Both paths now converge: the round ends, a screen appears, and the player
+// presses to advance. The Bunco gets its celebration — it just has to be
+// dismissed rather than dismissing itself. One consistent move, no race.
+const isRoundEndPhase = computed(() => phase.value === 'round-end')
+// Scoped to THIS round, not the globally last roll. With lastRoll, ending a
+// round that has no rolls of its own showed the celebration for a Bunco scored
+// in the PREVIOUS round — the same unscoped-lookup mistake as #1106, made one
+// layer up while fixing #1106. The state-machine fuzzer could not see it,
+// because it never rendered anything.
+const isBuncoRound = computed(
+  () => phase.value === 'round-end' && lastRollThisRound.value?.type === 'bunco'
 )
 
-// BUNCO! auto-advance
-const BUNCO_AUTO_MS = 6000
-let buncoTimer = null
-let buncoTick = null
-const buncoAutoAt = ref(0)
-const buncoRemaining = ref(BUNCO_AUTO_MS)
-const buncoProgress = computed(() => 100 * (1 - buncoRemaining.value / BUNCO_AUTO_MS))
-watch(isBuncoPhase, (val) => {
-  if (val) {
-    if (navigator.vibrate) navigator.vibrate(200)
-    // 2000ms was too short to read the screen, notice a mis-tap and reach the
-    // Undo beside it — which defeated the one affordance protecting the largest
-    // possible scoring error. The countdown is now visible rather than silent.
-    buncoAutoAt.value = Date.now() + BUNCO_AUTO_MS
-    buncoTimer = setTimeout(() => commitRound('W'), BUNCO_AUTO_MS)
-    buncoTick = setInterval(() => {
-      buncoRemaining.value = Math.max(0, buncoAutoAt.value - Date.now())
-    }, 100)
-  } else {
-    clearTimeout(buncoTimer)
-    clearInterval(buncoTick)
-    buncoRemaining.value = BUNCO_AUTO_MS
-  }
+watch(isBuncoRound, (val) => {
+  if (val && navigator.vibrate) navigator.vibrate(200)
 })
 
 // Set/game summaries
@@ -212,7 +205,7 @@ onMounted(() => {
    1.4.4). Applied to `button` rather than to each class so controls added
    later inherit it. */
 button,
-.bunco-celebration,
+.overlay-screen,
 .hint-bar {
   touch-action: manipulation;
 }
@@ -245,22 +238,31 @@ button:active {
   color: var(--text-mid);
 }
 
-/* The auto-advance used to be invisible, so the Undo beside it looked available
-   for longer than it was. Showing the timer makes the deadline legible. */
-.bunco-countdown {
-  width: 60%;
-  max-width: 280px;
-  height: 4px;
-  margin-top: 20px;
-  background: rgba(0, 0, 0, 0.25);
-  border-radius: 2px;
-  overflow: hidden;
+/* The countdown that used to live here is gone with the auto-advance: there is
+   no deadline left to make legible. The celebration is now a banner on the
+   round-end screen rather than a screen of its own, so a Bunco is still an
+   event without being a different way forward. */
+.bunco-banner {
+  text-align: center;
+  margin-bottom: 8px;
+  animation: bunco-pop 0.45s ease-out;
 }
-.bunco-countdown i {
-  display: block;
-  height: 100%;
-  background: var(--bg);
-  transition: width 0.1s linear;
+.overlay-screen.is-bunco {
+  background: var(--accent);
+  color: var(--bg);
+}
+.overlay-screen.is-bunco .overlay-title,
+.overlay-screen.is-bunco .overlay-subtitle,
+.overlay-screen.is-bunco .overlay-score,
+.overlay-screen.is-bunco .overlay-score span {
+  color: var(--bg);
+}
+@keyframes bunco-pop {
+  from { transform: scale(0.8); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bunco-banner { animation: none; }
 }
 
 .app-layout {
@@ -282,28 +284,11 @@ button:active {
   cursor: pointer;
 }
 
-/* BUNCO! Celebration */
-.bunco-celebration {
-  position: fixed;
-  inset: 0;
-  background: var(--accent);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  animation: bunco-entrance 0.3s ease-out;
-}
-
-@keyframes bunco-entrance {
-  from { transform: scale(0.8); opacity: 0; }
-  to   { transform: scale(1);   opacity: 1; }
-}
-
 .bunco-text {
   font-family: 'Oswald', 'Impact', sans-serif;
   font-weight: 700;
-  font-size: clamp(72px, 20vw, 120px);
+  font-size: clamp(56px, 16vw, 96px);
+  line-height: 1;
   color: var(--bg);
   animation: bunco-pulse 0.6s ease-in-out infinite alternate;
 }
@@ -318,27 +303,14 @@ button:active {
   font-size: 16px;
   color: var(--bg);
   opacity: 0.7;
-  margin-top: 16px;
+  margin-top: 4px;
 }
 
-.bunco-undo {
-  margin-top: 32px;
-  min-height: 48px;
-  padding: 0 20px;
-  border: 1px solid var(--bg);
-  border-radius: 12px;
-  background: transparent;
+/* The round-end screen's own "← Undo" now serves the Bunco case too, so the
+   dedicated .bunco-undo button is gone. One undo control, one meaning. */
+.overlay-screen.is-bunco .ghost-btn {
   color: var(--bg);
-  font-family: 'Inter', sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  opacity: 0.75;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.bunco-undo:active {
-  opacity: 1;
+  opacity: 0.8;
 }
 
 /* Overlay screens (W/L/T, set-end, game-over) */

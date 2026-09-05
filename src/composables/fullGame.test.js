@@ -329,16 +329,26 @@ describe('scoring semantics vs the rules', () => {
 
 describe('undo under simulation', () => {
   it('undo never removes a roll from a previous round', () => {
+    // UPDATED 2026-08-15 with the move to undo-as-history. The invariant in the
+    // name is unchanged and still the point; the old body asserted something
+    // stronger and wrong -- that undo in a fresh round is a NO-OP -- which held
+    // only because undo could not step back over commitRound at all. Ten presses
+    // now walk ten steps back, as they should. What must never happen is undo
+    // reaching PAST the current round to delete a completed round's roll, which
+    // is exactly what the old implementation did with a Bunco (see #1106).
     const rand = rng(31337)
     const g = fresh()
     for (let i = 0; i < 5; i++) g.recordScore(1, 'normal')
     g.endRound()
+    const beforeCommit = g._state.value.rolls.map((r) => `${r.set}-${r.round}-${r.points}`)
     g.commitRound('W')
-    const afterCommit = g._state.value.rolls.map((r) => `${r.set}-${r.round}-${r.points}`)
+    expect(g.currentRound.value).toBe(2)
+    expect(g.rollsThisRound.value).toBe(0)
 
-    // Now in round 2 with no rolls — undo must be a no-op.
-    for (let i = 0; i < 10; i++) g.undoLast()
-    expect(g._state.value.rolls.map((r) => `${r.set}-${r.round}-${r.points}`)).toEqual(afterCommit)
+    // One undo steps back over the commit only: round 1's rolls are untouched.
+    g.undoLast()
+    expect(g.currentRound.value).toBe(1)
+    expect(g._state.value.rolls.map((r) => `${r.set}-${r.round}-${r.points}`)).toEqual(beforeCommit)
     void rand
   })
 
